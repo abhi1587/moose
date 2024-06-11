@@ -119,3 +119,25 @@ DiffusionPhysicsBase::addPostprocessors()
     getProblem().addPostprocessor(pp_type, prefix() + "diffusive_flux_" + boundary_name, params);
   }
 }
+
+void
+DiffusionPhysicsBase::addComponent(const ComponentAction & component)
+{
+  for (const auto & block : component.blocks())
+    _blocks.push_back(block);
+}
+
+void
+DiffusionPhysicsBase::addInitialConditions()
+{
+  InputParameters params = getFactory().getValidParams("FunctionIC");
+  assignBlocks(params, _blocks);
+
+  if (!_app.isRestarting() || parameters().isParamSetByUser("initial_condition"))
+  {
+    params.set<VariableName>("variable") = _var_name;
+    params.set<FunctionName>("function") = getParam<FunctionName>("initial_condition");
+
+    getProblem().addInitialCondition("FunctionIC", prefix() + _var_name + "_ic", params);
+  }
+}
