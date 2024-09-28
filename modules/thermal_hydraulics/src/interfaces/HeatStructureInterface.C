@@ -19,14 +19,17 @@ HeatStructureInterface::validParams()
   params.addParam<FunctionName>("initial_T", "Initial temperature [K]");
   params.addParam<Real>(
       "scaling_factor_temperature", 1.0, "Scaling factor for solid temperature variable.");
+  params.addParam<bool>("add_kernels", true, "Whether to add the heat transfer kernels");
 
   params.addPrivateParam<std::string>("component_type", "heat_struct");
+  params.declareControllable("initial_T");
 
   return params;
 }
 
 HeatStructureInterface::HeatStructureInterface(GeometricalComponent * geometrical_component)
-  : _geometrical_component_hsi(*geometrical_component)
+  : _geometrical_component_hsi(*geometrical_component),
+    _add_kernels(_geometrical_component_hsi.getParam<bool>("add_kernels"))
 {
 }
 
@@ -71,6 +74,9 @@ HeatStructureInterface::addVariables()
 void
 HeatStructureInterface::addMooseObjects()
 {
+  if (!_add_kernels)
+    return;
+
   if (useCylindricalTransformation())
     _hc_model->addHeatEquationRZ();
   else

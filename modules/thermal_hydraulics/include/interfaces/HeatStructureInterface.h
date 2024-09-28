@@ -74,4 +74,7 @@ protected:
 private:
   /// The geometrical component inheriting from this interface
   GeometricalComponent & _geometrical_component_hsi;
+
+  /// Whether to add heat transfer kernels
+  const bool _add_kernels;
 };
