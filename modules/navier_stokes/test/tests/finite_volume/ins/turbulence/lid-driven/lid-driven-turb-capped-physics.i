@@ -63,7 +63,7 @@ wall_treatment = 'eq_newton' # Options: eq_newton, eq_incremental, eq_linearized
 
         wall_boundaries = 'top left right bottom'
         momentum_wall_types = 'noslip noslip noslip noslip'
-        momentum_wall_functors = '${lid_velocity} 0 0 0 0 0 0 0'
+        momentum_wall_functors = '${lid_velocity} 0; 0 0; 0 0; 0 0'
 
         pin_pressure = true
         pinned_pressure_type = point-value-uo
@@ -106,12 +106,6 @@ wall_treatment = 'eq_newton' # Options: eq_newton, eq_incremental, eq_linearized
       []
     []
   []
-[]
-
-[Problem]
-  previous_nl_solution_required = true
-  # TODO: fix this
-  error_on_jacobian_nonzero_reallocation = false
 []
 
 [AuxVariables]

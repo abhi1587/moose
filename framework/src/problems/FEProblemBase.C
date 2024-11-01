@@ -349,7 +349,7 @@ FEProblemBase::validParams()
       "material_dependency_check check_uo_aux_state error_on_jacobian_nonzero_reallocation",
       "Simulation checks");
   params.addParamNamesToGroup("use_nonlinear previous_nl_solution_required nl_sys_names "
-                              "ignore_zeros_in_jacobian",
+                              "ignore_zeros_in_jacobian identify_variable_groups_in_nl",
                               "Nonlinear system(s)");
   params.addParamNamesToGroup(
       "restart_file_base force_restart allow_initial_conditions_with_restart", "Restart");
@@ -464,6 +464,7 @@ FEProblemBase::FEProblemBase(const InputParameters & parameters)
             ? getParam<bool>("error_on_jacobian_nonzero_reallocation")
             : _app.errorOnJacobianNonzeroReallocation()),
     _ignore_zeros_in_jacobian(getParam<bool>("ignore_zeros_in_jacobian")),
+    _preserve_matrix_sparsity_pattern(true),
     _force_restart(getParam<bool>("force_restart")),
     _allow_ics_during_restart(getParam<bool>("allow_initial_conditions_with_restart")),
     _skip_nl_system_check(getParam<bool>("skip_nl_system_check")),
@@ -490,14 +491,18 @@ FEProblemBase::FEProblemBase(const InputParameters & parameters)
 
   for (const auto i : index_range(_nl_sys_names))
   {
-    _nl_sys_name_to_num[_nl_sys_names[i]] = i;
-    _solver_sys_name_to_num[_nl_sys_names[i]] = i;
+    const auto & name = _nl_sys_names[i];
+    _nl_sys_name_to_num[name] = i;
+    _solver_sys_name_to_num[name] = i;
+    _solver_sys_names.push_back(name);
   }
 
   for (const auto i : index_range(_linear_sys_names))
   {
-    _linear_sys_name_to_num[_linear_sys_names[i]] = i;
-    _solver_sys_name_to_num[_linear_sys_names[i]] = i + _num_nl_sys;
+    const auto & name = _linear_sys_names[i];
+    _linear_sys_name_to_num[name] = i;
+    _solver_sys_name_to_num[name] = i + _num_nl_sys;
+    _solver_sys_names.push_back(name);
   }
 
   _nonlocal_cm.resize(_nl_sys_names.size());
@@ -634,18 +639,25 @@ FEProblemBase::createTagSolutions()
     // ease of use in doing things like copying solutions backwards. We're just storing pointers in
     // the solution states containers so populating the zeroth state does not cost us the memory of
     // a new vector
-    for (const auto i : make_range(0, 2))
-    {
-      for (auto & sys : _solver_systems)
-        sys->needSolutionState(i, Moose::SolutionIterationType::Nonlinear);
-      _aux->needSolutionState(i, Moose::SolutionIterationType::Nonlinear);
-    }
+    needSolutionState(2, Moose::SolutionIterationType::Nonlinear);
   }
 
   auto tag = addVectorTag(Moose::SOLUTION_TAG, Moose::VECTOR_TAG_SOLUTION);
   for (auto & sys : _solver_systems)
     sys->associateVectorToTag(*sys->system().current_local_solution.get(), tag);
   _aux->associateVectorToTag(*_aux->system().current_local_solution.get(), tag);
+}
+
+void
+FEProblemBase::needSolutionState(unsigned int oldest_needed,
+                                 Moose::SolutionIterationType iteration_type)
+{
+  for (const auto i : make_range((unsigned)0, oldest_needed))
+  {
+    for (auto & sys : _solver_systems)
+      sys->needSolutionState(i, iteration_type);
+    _aux->needSolutionState(i, iteration_type);
+  }
 }
 
 void
@@ -1137,12 +1149,12 @@ FEProblemBase::initialSetup()
 
   for (auto & sys : _solver_systems)
   {
-    auto ti = sys->getTimeIntegrator();
+    const auto & tis = sys->getTimeIntegrators();
 
-    if (ti)
     {
       TIME_SECTION("timeIntegratorInitialSetup", 5, "Initializing Time Integrator");
-      ti->initialSetup();
+      for (auto & ti : tis)
+        ti->initialSetup();
     }
   }
 
@@ -3581,6 +3593,17 @@ FEProblemBase::getMaterialData(Moose::MaterialDataType type, const THREAD_ID tid
   }
 
   mooseError("FEProblemBase::getMaterialData(): Invalid MaterialDataType ", type);
+}
+
+void
+FEProblemBase::setPreserveMatrixSparsityPattern(bool preserve)
+{
+  if (_ignore_zeros_in_jacobian && preserve)
+    paramWarning(
+        "ignore_zeros_in_jacobian",
+        "We likely cannot preserve the sparsity pattern if ignoring zeros in the Jacobian, which "
+        "leads to removing those entries from the Jacobian sparsity pattern");
+  _preserve_matrix_sparsity_pattern = preserve;
 }
 
 bool
@@ -6101,7 +6124,7 @@ FEProblemBase::solve(const unsigned int nl_sys_num)
   // We did not add PETSc options to database yet
   if (!_is_petsc_options_inserted)
   {
-    Moose::PetscSupport::petscSetOptions(_petsc_options, _solver_params);
+    Moose::PetscSupport::petscSetOptions(_petsc_options, _solver_params, this);
     _is_petsc_options_inserted = true;
   }
 #endif
@@ -6264,7 +6287,7 @@ FEProblemBase::solveLinearSystem(const unsigned int linear_sys_num,
   // We did not add PETSc options to database yet
   if (!_is_petsc_options_inserted)
   {
-    Moose::PetscSupport::petscSetOptions(options, solver_params);
+    Moose::PetscSupport::petscSetOptions(options, solver_params, this);
     _is_petsc_options_inserted = true;
   }
 #endif
@@ -6478,10 +6501,10 @@ FEProblemBase::addTimeIntegrator(const std::string & type,
   {
     nl->addDotVectors();
 
-    auto tag_udot = nl->getTimeIntegrator()->uDotFactorTag();
+    auto tag_udot = nl->getTimeIntegrators()[0]->uDotFactorTag();
     if (!nl->hasVector(tag_udot))
       nl->associateVectorToTag(*nl->solutionUDot(), tag_udot);
-    auto tag_udotdot = nl->getTimeIntegrator()->uDotDotFactorTag();
+    auto tag_udotdot = nl->getTimeIntegrators()[0]->uDotDotFactorTag();
     if (!nl->hasVector(tag_udotdot) && uDotDotRequested())
       nl->associateVectorToTag(*nl->solutionUDotDot(), tag_udotdot);
   }
@@ -7394,7 +7417,7 @@ FEProblemBase::computePostCheck(NonlinearImplicitSystem & sys,
   if (vectorTagExists(Moose::PREVIOUS_NL_SOLUTION_TAG))
   {
     _current_nl_sys->setPreviousNewtonSolution(old_soln);
-    _aux->setPreviousNewtonSolution();
+    _aux->copyCurrentIntoPreviousNL();
   }
 
   // MOOSE doesn't change the search_direction
