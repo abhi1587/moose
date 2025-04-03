@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -66,12 +66,10 @@ public:
   static InputParameters validParams();
   /**
    * Helper function for creating a MooseApp from command-line arguments and a Parser.
+   *
+   * The parser must be set and have an app type set.
    */
-  static MooseAppPtr createAppShared(const std::string & default_app_type,
-                                     int argc,
-                                     char ** argv,
-                                     std::unique_ptr<Parser> parser,
-                                     MPI_Comm comm_word = MPI_COMM_WORLD);
+  static MooseAppPtr createAppShared(int argc, char ** argv, std::unique_ptr<Parser> parser);
 
   /**
    * Deprecated helper function for creating a MooseApp for Apps haven't adapted to the new Parser

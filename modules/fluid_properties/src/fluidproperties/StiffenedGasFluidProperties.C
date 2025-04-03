@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -104,6 +104,31 @@ StiffenedGasFluidProperties::T_from_v_e(
     const ADReal & v, const ADReal & e, ADReal & p, ADReal & dp_dv, ADReal & dp_de) const
 {
   T_from_v_e_template(v, e, p, dp_dv, dp_de);
+}
+
+Real
+StiffenedGasFluidProperties::T_from_p_h(Real v, Real e) const
+{
+  return T_from_p_h_template(v, e);
+}
+
+void
+StiffenedGasFluidProperties::T_from_p_h(Real v, Real e, Real & T, Real & dT_dv, Real & dT_de) const
+{
+  T_from_p_h_template(v, e, T, dT_dv, dT_de);
+}
+
+ADReal
+StiffenedGasFluidProperties::T_from_p_h(const ADReal & v, const ADReal & e) const
+{
+  return T_from_p_h_template(v, e);
+}
+
+void
+StiffenedGasFluidProperties::T_from_p_h(
+    const ADReal & v, const ADReal & e, ADReal & p, ADReal & dp_dv, ADReal & dp_de) const
+{
+  T_from_p_h_template(v, e, p, dp_dv, dp_de);
 }
 
 Real

@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -39,10 +39,11 @@ WCNSFVSwitchableInletVelocityBC::WCNSFVSwitchableInletVelocityBC(const InputPara
 }
 
 ADReal
-WCNSFVSwitchableInletVelocityBC::boundaryValue(const FaceInfo & fi) const
+WCNSFVSwitchableInletVelocityBC::boundaryValue(const FaceInfo & fi,
+                                               const Moose::StateArg & state) const
 {
   if (_switch_bc)
-    return WCNSFVInletVelocityBC::boundaryValue(fi) * _face_limiter;
+    return WCNSFVInletVelocityBC::boundaryValue(fi, state) * _face_limiter;
   else
     // The two-term expansion = false piece is critical as it prevents infinite recursion that would
     // occur with a Green-Gauss gradient calculation which would call back to this "Dirichlet"
@@ -51,6 +52,6 @@ WCNSFVSwitchableInletVelocityBC::boundaryValue(const FaceInfo & fi) const
                                                  /*two_term_expansion=*/false,
                                                  /*correct_skewness=*/false,
                                                  fi.elemPtr(),
-                                                 determineState()) *
+                                                 state) *
            _face_limiter;
 }

@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -40,7 +40,7 @@ SetupQuadratureAction::validParams()
 
 SetupQuadratureAction::SetupQuadratureAction(const InputParameters & parameters)
   : Action(parameters),
-    _type(Moose::stringToEnum<QuadratureType>(getParam<MooseEnum>("type"))),
+    _type(Moose::stringToEnum<libMesh::QuadratureType>(getParam<MooseEnum>("type"))),
     _order(Moose::stringToEnum<Order>(getParam<MooseEnum>("order"))),
     _element_order(Moose::stringToEnum<Order>(getParam<MooseEnum>("element_order"))),
     _side_order(Moose::stringToEnum<Order>(getParam<MooseEnum>("side_order"))),

@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -25,6 +25,8 @@
 #include "libmesh/checkpoint_io.h"
 #include "libmesh/enum_xdr_mode.h"
 #include "libmesh/utility.h"
+
+using namespace libMesh;
 
 registerMooseObject("MooseApp", Checkpoint);
 

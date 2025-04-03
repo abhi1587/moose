@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -20,6 +20,8 @@ public:
   static OptionSet expected_options();
 
   NEML2TestModel(const OptionSet & options);
+
+  void request_AD() override;
 
 protected:
   // input variables

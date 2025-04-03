@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -28,7 +28,11 @@
 #include "libmesh/edge_edge2.h"
 #include "libmesh/edge_edge3.h"
 #include "libmesh/face_tri3.h"
+#include "libmesh/face_tri6.h"
+#include "libmesh/face_tri7.h"
 #include "libmesh/face_quad4.h"
+#include "libmesh/face_quad8.h"
+#include "libmesh/face_quad9.h"
 #include "libmesh/exodusII_io.h"
 #include "libmesh/quadrature_gauss.h"
 #include "libmesh/quadrature_nodal.h"

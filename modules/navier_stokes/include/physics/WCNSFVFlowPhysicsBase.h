@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -70,6 +70,8 @@ public:
   const std::vector<Point> & getFluxInletDirections() const { return _flux_inlet_directions; }
   /// Get the inlet flux postprocessor if using a flux inlet
   const std::vector<PostprocessorName> & getFluxInletPPs() const { return _flux_inlet_pps; }
+  /// Get the name of the linear friction coefficient. Returns an empty string if no friction.
+  virtual MooseFunctorName getLinearFrictionCoefName() const = 0;
   /// Return the name of the Rhie Chow user object
   virtual UserObjectName rhieChowUOName() const = 0;
   /// Return the number of algebraic ghosting layers needed
@@ -78,7 +80,7 @@ public:
 protected:
   virtual void initializePhysicsAdditional() override;
   virtual void actOnAdditionalTasks() override;
-  virtual void addNonlinearVariables() override = 0;
+  virtual void addSolverVariables() override = 0;
   virtual void addInitialConditions() override;
   virtual void addFVKernels() override = 0;
   virtual void addFVBCs() override;
@@ -87,19 +89,20 @@ protected:
   virtual void addPostprocessors() override;
 
   /**
-   * Functions adding kernels for the incompressible momentum equation
+   * Functions adding kernels for the flow momentum equations
    * If the material properties are not constant, these can be used for
    * weakly-compressible simulations (except the Boussinesq kernel) as well.
    */
-  virtual void addINSMomentumPressureKernels() = 0;
-  virtual void addINSMomentumGravityKernels() = 0;
-  virtual void addINSMomentumBoussinesqKernels() = 0;
+  virtual void addMomentumTimeKernels() = 0;
+  virtual void addMomentumPressureKernels() = 0;
+  virtual void addMomentumGravityKernels() = 0;
+  virtual void addMomentumBoussinesqKernels() = 0;
 
-  /// Functions adding boundary conditions for the incompressible simulation.
+  /// Functions adding boundary conditions for the flow simulation.
   /// These are used for weakly-compressible simulations as well.
-  virtual void addINSInletBC() = 0;
-  virtual void addINSOutletBC() = 0;
-  virtual void addINSWallsBC() = 0;
+  virtual void addInletBC() = 0;
+  virtual void addOutletBC() = 0;
+  virtual void addWallsBC() = 0;
 
   /// Return whether a Forchheimer friction model is in use
   virtual bool hasForchheimerFriction() const = 0;
@@ -135,6 +138,8 @@ protected:
 
   /// Compressibility type, can be compressible, incompressible or weakly-compressible
   const MooseEnum _compressibility;
+  /// Whether we are solving for the total or dynamic pressure
+  const bool _solve_for_dynamic_pressure;
 
   /// Whether to use the porous medium treatment
   const bool _porous_medium_treatment;

@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -65,19 +65,34 @@ ImplicitEuler::postResidual(NumericVector<Number> & residual)
 {
   if (!_var_restriction)
   {
-    residual += _Re_time;
-    residual += _Re_non_time;
+    residual += *_Re_time;
+    residual += *_Re_non_time;
     residual.close();
   }
   else
   {
     auto residual_sub = residual.get_subvector(_local_indices);
-    auto re_time_sub = _Re_time.get_subvector(_local_indices);
-    auto re_non_time_sub = _Re_non_time.get_subvector(_local_indices);
+    auto re_time_sub = _Re_time->get_subvector(_local_indices);
+    auto re_non_time_sub = _Re_non_time->get_subvector(_local_indices);
     *residual_sub += *re_time_sub;
     *residual_sub += *re_non_time_sub;
     residual.restore_subvector(std::move(residual_sub), _local_indices);
-    _Re_time.restore_subvector(std::move(re_time_sub), _local_indices);
-    _Re_non_time.restore_subvector(std::move(re_non_time_sub), _local_indices);
+    _Re_time->restore_subvector(std::move(re_time_sub), _local_indices);
+    _Re_non_time->restore_subvector(std::move(re_non_time_sub), _local_indices);
   }
+}
+
+Real
+ImplicitEuler::timeDerivativeRHSContribution(dof_id_type dof_id,
+                                             const std::vector<Real> & factors) const
+{
+  mooseAssert(factors.size() == numStatesRequired(),
+              "Either too many or too few states are given!");
+  return factors[0] * _solution_old(dof_id) / _dt;
+}
+
+Real
+ImplicitEuler::timeDerivativeMatrixContribution(const Real factor) const
+{
+  return factor / _dt;
 }

@@ -1,5 +1,5 @@
 #* This file is part of the MOOSE framework
-#* https://www.mooseframework.org
+#* https://mooseframework.inl.gov
 #*
 #* All rights reserved, see COPYRIGHT for full restrictions
 #* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -41,7 +41,7 @@ class JSONDiff(SchemaDiff):
         for entry in self.specs['ignored_regex_items']:
             re_entry = 'root'
             for key in entry.split('/'):
-                re_entry += f"\['{key}'\]"
+                re_entry += fr"\['{key}'\]"
             self.exclude_regex_paths.append(re_entry)
 
     def load_file(self, path1):

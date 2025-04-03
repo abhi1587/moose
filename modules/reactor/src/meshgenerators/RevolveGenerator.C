@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -8,6 +8,7 @@
 //* https://www.gnu.org/licenses/lgpl-2.1.html
 
 #include "RevolveGenerator.h"
+#include "PolygonalMeshGenerationUtils.h"
 
 #include "libmesh/cell_prism6.h"
 #include "libmesh/cell_prism15.h"
@@ -29,6 +30,8 @@
 #include "libmesh/face_quad9.h"
 #include "libmesh/point.h"
 #include "libmesh/mesh_tools.h"
+
+using namespace libMesh;
 
 // C++ includes
 #include <cmath>
@@ -409,7 +412,8 @@ RevolveGenerator::generate()
   }
   if (_preserve_volumes)
   {
-    _radius_correction_factor = radiusCorrectionFactor(azi_array, _full_circle_revolving, order);
+    _radius_correction_factor = PolygonalMeshGenerationUtils::radiusCorrectionFactor(
+        azi_array, _full_circle_revolving, order);
 
     // In the meanwhile, modify the input mesh for radius correction if applicable
     for (const auto & node : input->node_ptr_range())

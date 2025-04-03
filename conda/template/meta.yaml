@@ -8,7 +8,8 @@ package:
   version: {{ version }}
 
 source:
-  path: <REPO>
+  - path: <REPO>
+  - path: retry_build.sh
 
 build:
   number: 0
@@ -35,7 +36,7 @@ test:
     - <EXECUTABLE>-opt --help
 
 about:
-  home: https://mooseframework.org/
+  home: https://mooseframework.inl.gov/
   license: LGPL 2.1
   summary: >
     The Multiphysics Object-Oriented Simulation Environment (MOOSE) is a finite-element,

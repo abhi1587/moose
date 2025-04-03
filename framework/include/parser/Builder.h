@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -105,14 +105,9 @@ public:
 
   void walk(const std::string & fullpath, const std::string & nodepath, hit::Node * n);
 
-  void errorCheck(const Parallel::Communicator & comm, bool warn_unused, bool err_unused);
+  void errorCheck(const libMesh::Parallel::Communicator & comm, bool warn_unused, bool err_unused);
 
   std::vector<std::string> listValidParams(std::string & section_name);
-
-  /**
-   * Marks MOOSE hit syntax from supplied command-line arguments
-   */
-  std::string hitCLIFilter(std::string appname, const std::vector<std::string> & argv);
 
   /**
    * @return The root node in the parser

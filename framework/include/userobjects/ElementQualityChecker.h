@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -29,10 +29,10 @@ public:
   void finalize() override;
 
 protected:
-  bool checkMetricApplicability(const ElemQuality & elem_metric,
-                                const std::vector<ElemQuality> & elem_metrics);
+  bool checkMetricApplicability(const libMesh::ElemQuality & elem_metric,
+                                const std::vector<libMesh::ElemQuality> & elem_metrics);
 
-  ElemQuality _m_type;
+  libMesh::ElemQuality _m_type;
   const bool _has_upper_bound;
   const bool _has_lower_bound;
   Real _upper_bound;

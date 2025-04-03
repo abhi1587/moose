@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -31,6 +31,8 @@
 #include "libmesh/dof_map.h"
 #include "libmesh/string_to_enum.h"
 #include "libmesh/fe_interface.h"
+
+using namespace libMesh;
 
 /// Free function used for a libMesh callback
 void
@@ -651,7 +653,6 @@ SystemBase::closeTaggedVector(const TagID tag)
                "' in system '",
                name(),
                "' because there is no vector associated with that tag");
-
   getVector(tag).close();
 }
 
@@ -677,8 +678,8 @@ SystemBase::zeroTaggedVector(const TagID tag)
                "' in system '",
                name(),
                "' because there is no vector associated with that tag");
-
-  getVector(tag).zero();
+  if (!_subproblem.vectorTagNotZeroed(tag))
+    getVector(tag).zero();
 }
 
 void
@@ -1230,8 +1231,25 @@ void
 SystemBase::copySolutionsBackwards()
 {
   system().update();
-
   copyOldSolutions();
+  copyPreviousNonlinearSolutions();
+}
+
+/**
+ * Shifts the solutions backwards in nonlinear iteration history
+ */
+void
+SystemBase::copyPreviousNonlinearSolutions()
+{
+  // 1 is for nonlinear, 0 is for time, we do this for nonlinear only here
+  const auto states = _solution_states[1].size();
+  if (states > 1)
+    for (unsigned int i = states - 1; i > 0; --i)
+      solutionState(i, Moose::SolutionIterationType::Nonlinear) =
+          solutionState(i - 1, Moose::SolutionIterationType::Nonlinear);
+
+  if (solutionPreviousNewton())
+    *solutionPreviousNewton() = *currentSolution();
 }
 
 /**
@@ -1241,22 +1259,16 @@ void
 SystemBase::copyOldSolutions()
 {
   // Copying the solutions backward so the current solution will become the old, and the old will
-  // become older. The same applies to the nonlinear iterates.
-  for (const auto iteration_index : index_range(_solution_states))
-  {
-    const auto states = _solution_states[iteration_index].size();
-    if (states > 1)
-      for (unsigned int i = states - 1; i > 0; --i)
-        solutionState(i, Moose::SolutionIterationType(iteration_index)) =
-            solutionState(i - 1, Moose::SolutionIterationType(iteration_index));
-  }
+  // become older. 0 index is for time, 1 would be nonlinear iteration.
+  const auto states = _solution_states[0].size();
+  if (states > 1)
+    for (unsigned int i = states - 1; i > 0; --i)
+      solutionState(i) = solutionState(i - 1);
 
   if (solutionUDotOld())
     *solutionUDotOld() = *solutionUDot();
   if (solutionUDotDotOld())
     *solutionUDotDotOld() = *solutionUDotDot();
-  if (solutionPreviousNewton())
-    *solutionPreviousNewton() = *currentSolution();
 }
 
 /**
@@ -1627,6 +1639,18 @@ const Number &
 SystemBase::duDotDu(const unsigned int var_num) const
 {
   return _du_dot_du[var_num];
+}
+
+const std::set<SubdomainID> &
+SystemBase::getSubdomainsForVar(const std::string & var_name) const
+{
+  return getSubdomainsForVar(getVariable(0, var_name).number());
+}
+
+std::string
+SystemBase::prefix() const
+{
+  return "-" + (system().prefix_with_name() ? system().prefix() : "");
 }
 
 template MooseVariableFE<Real> & SystemBase::getFieldVariable<Real>(THREAD_ID tid,

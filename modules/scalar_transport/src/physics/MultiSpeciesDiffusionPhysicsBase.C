@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -112,12 +112,11 @@ MultiSpeciesDiffusionPhysicsBase::addPreconditioning()
   if (_preconditioning == "default")
   {
     // We only pass petsc options as that's all that's needed to set up the preconditioner
-    Moose::PetscSupport::PetscOptions & po = _problem->getPetscOptions();
     const auto option_pair1 =
         std::make_pair<MooseEnumItem, std::string>(MooseEnumItem("-pc_type"), "hypre");
     const auto option_pair2 =
         std::make_pair<MooseEnumItem, std::string>(MooseEnumItem("-pc_hypre_type"), "boomeramg");
-    processPetscPairs({option_pair1, option_pair2}, _problem->mesh().dimension(), po);
+    addPetscPairsToPetscOptions({option_pair1, option_pair2});
   }
 }
 
@@ -144,7 +143,7 @@ MultiSpeciesDiffusionPhysicsBase::addPostprocessors()
         params.set<MooseFunctorName>("functor_diffusivity") =
             getParam<std::vector<MooseFunctorName>>("diffusivity_functors")[i];
       else
-        params.set<MooseFunctorName>("functor_diffusivity") = "1";
+        mooseError("No diffusivity parameter specified");
       params.set<std::vector<BoundaryName>>("boundary") = {boundary_name};
       // Default to maximum computation
       params.set<ExecFlagEnum>("execute_on") = {

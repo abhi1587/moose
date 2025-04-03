@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -90,18 +90,6 @@ public:
 
 private:
   const CompileParamWalker::ParamMap & _map;
-};
-
-class FindAppWalker : public hit::Walker
-{
-public:
-  void walk(const std::string & /*fullpath*/,
-            const std::string & /*nodepath*/,
-            hit::Node * section) override;
-  std::string getApp() { return _app_type; };
-
-private:
-  std::string _app_type;
 };
 
 /**

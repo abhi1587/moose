@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -100,9 +100,10 @@ HeatConductionPhysicsBase::addInitialConditions()
   if (!_app.isRestarting() || parameters().isParamSetByUser("initial_temperature"))
   {
     InputParameters params = getFactory().getValidParams("FunctionIC");
+    assignBlocks(params, _blocks);
     params.set<VariableName>("variable") = _temperature_name;
     params.set<FunctionName>("function") = getParam<FunctionName>("initial_temperature");
-    getProblem().addInitialCondition("FunctionIC", _temperature_name + "_ic", params);
+    getProblem().addInitialCondition("FunctionIC", prefix() + _temperature_name + "_ic", params);
   }
 }
 
@@ -113,11 +114,10 @@ HeatConductionPhysicsBase::addPreconditioning()
   if (_preconditioning == "default")
   {
     // We only pass petsc options as that's all that's needed to set up the preconditioner
-    auto & po = _problem->getPetscOptions();
     const auto option_pair1 =
         std::make_pair<MooseEnumItem, std::string>(MooseEnumItem("-pc_type"), "hypre");
     const auto option_pair2 =
         std::make_pair<MooseEnumItem, std::string>(MooseEnumItem("-pc_hypre_type"), "boomeramg");
-    processPetscPairs({option_pair1, option_pair2}, _problem->mesh().dimension(), po);
+    addPetscPairsToPetscOptions({option_pair1, option_pair2});
   }
 }

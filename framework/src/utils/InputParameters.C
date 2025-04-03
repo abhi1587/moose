@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -175,7 +175,7 @@ InputParameters::operator=(const InputParameters & rhs)
   _old_to_new_name_and_dep = rhs._old_to_new_name_and_dep;
   _new_to_old_names = rhs._new_to_old_names;
   _hit_node = rhs._hit_node;
-  _finalized = rhs._finalized;
+  _finalized = false;
 
   return *this;
 }
@@ -663,7 +663,7 @@ InputParameters::finalize(const std::string & parsing_syntax)
       return;
 
     // The base by which to make things relative to
-    const auto file_base = getParamFileBase(param_name);
+    const auto file_base = getFileBase(param_name);
     value = std::filesystem::absolute(file_base / value_path).c_str();
   };
 
@@ -686,19 +686,50 @@ InputParameters::finalize(const std::string & parsing_syntax)
     set_if_filename(MeshFileName);
     set_if_filename(MatrixFileName);
 #undef set_if_filename
+    // Set paths for data files
+    else if (auto data_file_name =
+                 dynamic_cast<Parameters::Parameter<DataFileName> *>(param_value.get()))
+    {
+      Moose::DataFileUtils::Path found_path;
+      std::optional<std::string> error;
+
+      // Catch this so that we can add additional error context if it fails (the param path)
+      const auto throw_on_error_before = Moose::_throw_on_error;
+      Moose::_throw_on_error = true;
+      try
+      {
+        found_path = Moose::DataFileUtils::getPath(data_file_name->get(), getFileBase(param_name));
+      }
+      catch (std::exception & e)
+      {
+        error = errorPrefix(param_name) + " " + e.what();
+      }
+      Moose::_throw_on_error = throw_on_error_before;
+
+      if (error)
+        mooseError(*error);
+
+      // Set the value to the absolute searched path
+      data_file_name->set() = found_path.path;
+      // And store the path in metadata so that we can dump it later
+      at(param_name)._data_file_name_path = found_path;
+    }
   }
 
   _finalized = true;
 }
 
 std::filesystem::path
-InputParameters::getParamFileBase(const std::string & param_name) const
+InputParameters::getFileBase(const std::optional<std::string> & param_name) const
 {
   mooseAssert(!have_parameter<std::string>("_app_name"),
               "Not currently setup to work with app FileName parameters");
 
+  const hit::Node * hit_node = nullptr;
+
   // Context from the individual parameter
-  const hit::Node * hit_node = getHitNode(param_name);
+  if (param_name)
+    hit_node = getHitNode(*param_name);
   // Context from the parameters
   if (!hit_node)
     hit_node = getHitNode();
@@ -712,10 +743,15 @@ InputParameters::getParamFileBase(const std::string & param_name) const
 
   // Failed to find a node up the tree that isn't a command line argument
   if (!hit_node)
-    mooseError(
-        errorPrefix(param_name),
-        " Parameter was set via a command-line argument and does not have sufficient context for "
-        "determining a file path.");
+  {
+    std::string prefix = "";
+    if (param_name)
+      prefix = errorPrefix(*param_name) + " ";
+    mooseError(prefix,
+               "Input context was set via a command-line argument and does not have sufficient "
+               "context for "
+               "determining a file path.");
+  }
 
   return std::filesystem::absolute(std::filesystem::path(hit_node->filename()).parent_path());
 }
@@ -744,7 +780,7 @@ InputParameters::hasDefault(const std::string & param_name) const
   else if (isParamSetByAddParam(name))
     return true;
   else if (isParamValid(name))
-    mooseError("No way to know if the parameter", param_name, "has a default");
+    mooseError("No way to know if the parameter '", param_name, "' has a default");
   else
     return false;
 }
@@ -921,22 +957,52 @@ InputParameters::renameParameterGroup(const std::string & old_name, const std::s
       param.second._group = new_name;
 }
 
+void
+InputParameters::setGlobalCommandLineParam(const std::string & name)
+{
+  auto & cl_data = at(checkForRename(name))._cl_data;
+  if (!cl_data)
+    mooseError("InputParameters::setGlobalCommandLineParam: The parameter '",
+               name,
+               "' is not a command line parameter");
+  cl_data->global = true;
+}
+
 bool
 InputParameters::isCommandLineParameter(const std::string & name) const
 {
   return at(checkForRename(name))._cl_data.has_value();
 }
 
-const std::vector<std::string> &
-InputParameters::getCommandLineSyntax(const std::string & name) const
+std::optional<InputParameters::CommandLineMetadata>
+InputParameters::queryCommandLineMetadata(const std::string & name) const
 {
-  return getCommandLineMetadata(name).syntax;
+  const auto & cl_data = at(checkForRename(name))._cl_data;
+  if (!cl_data)
+    return {};
+  return *cl_data;
 }
 
-InputParameters::CommandLineMetadata::ArgumentType
-InputParameters::getCommandLineArgumentType(const std::string & name) const
+const InputParameters::CommandLineMetadata &
+InputParameters::getCommandLineMetadata(const std::string & name) const
 {
-  return getCommandLineMetadata(name).argument_type;
+  const auto & cl_data = at(checkForRename(name))._cl_data;
+  if (!cl_data)
+    mooseError("InputParameters::getCommandLineMetadata: The parameter '",
+               name,
+               "' is not a command line parameter");
+  return *cl_data;
+}
+
+void
+InputParameters::commandLineParamSet(const std::string & name, const CommandLineParamSetKey)
+{
+  auto & cl_data = at(checkForRename(name))._cl_data;
+  if (!cl_data)
+    mooseError("InputParameters::commandLineParamSet: The parameter '",
+               name,
+               "' is not a command line parameter");
+  cl_data->set_by_command_line = true;
 }
 
 std::string
@@ -1107,14 +1173,17 @@ bool
 InputParameters::isParamSetByUser(const std::string & name_in) const
 {
   const auto name = checkForRename(name_in);
+  // Invalid; for sure not set by the user
   if (!isParamValid(name))
-    // if the parameter is invalid, it is for sure not set by the user
     return false;
-  else
-    // If the parameters is not located in the list, then it was set by the user
-    // If the parameter is private, and present in global params, it is ignored, therefore not set
-    return _params.count(name) > 0 && !_params.at(name)._set_by_add_param &&
-           !_params.at(name)._is_private;
+  // Parameter is not located in the list (called Parameters::set)
+  if (!_params.count(name))
+    return false;
+  // Special case for a command line option, which is a private parameter
+  if (const auto cl_data = queryCommandLineMetadata(name))
+    return cl_data->set_by_command_line;
+  // Not a command line option, not set by addParam and not private
+  return !_params.at(name)._set_by_add_param && !_params.at(name)._is_private;
 }
 
 const std::string &
@@ -1478,15 +1547,6 @@ InputParameters::checkParamName(const std::string & name) const
     mooseError("Invalid parameter name: '", name, "'");
 }
 
-const InputParameters::CommandLineMetadata &
-InputParameters::getCommandLineMetadata(const std::string & name) const
-{
-  const auto & cl_data = at(checkForRename(name))._cl_data;
-  if (!cl_data)
-    mooseError("The parameter '", name, "' is not a command line parameter.");
-  return *cl_data;
-}
-
 bool
 InputParameters::shouldIgnore(const std::string & name_in)
 {
@@ -1678,6 +1738,12 @@ InputParameters::paramAliases(const std::string & param_name) const
     aliases.push_back(pr.second);
 
   return aliases;
+}
+
+std::optional<Moose::DataFileUtils::Path>
+InputParameters::queryDataFileNamePath(const std::string & name) const
+{
+  return at(checkForRename(name))._data_file_name_path;
 }
 
 void

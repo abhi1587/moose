@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -108,6 +108,6 @@ public:
 
 private:
   /// Melting temperature of 2LiF-BeF2
-  const Real _T_mo;
+  static constexpr Real _T_mo = 398.;
 };
 #pragma GCC diagnostic pop

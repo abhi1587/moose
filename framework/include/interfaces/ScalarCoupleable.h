@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -85,7 +85,7 @@ protected:
    * @param comp Component number for vector of coupled variables
    * @return Order of coupled variable
    */
-  Order coupledScalarOrder(const std::string & var_name, unsigned int comp = 0) const;
+  libMesh::Order coupledScalarOrder(const std::string & var_name, unsigned int comp = 0) const;
 
   /**
    * Returns value of a scalar coupled variable

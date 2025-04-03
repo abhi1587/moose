@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -111,6 +111,6 @@ public:
 
 private:
   /// Melting temperature of Lead
-  const Real _T_mo;
+  static constexpr Real _T_mo = 600.6;
 };
 #pragma GCC diagnostic pop

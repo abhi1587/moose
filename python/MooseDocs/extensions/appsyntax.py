@@ -1,5 +1,5 @@
 #* This file is part of the MOOSE framework
-#* https://www.mooseframework.org
+#* https://mooseframework.inl.gov
 #*
 #* All rights reserved, see COPYRIGHT for full restrictions
 #* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -100,7 +100,6 @@ class AppSyntaxExtension(command.CommandExtension):
         config['inputs'] = ([],
                             "List of directories to interrogate for input files using an object.")
         config['allow-test-objects'] = (False, "Enable documentation for test objects.");
-        config['hide'] = (None, "DEPRECATED")
         config['remove'] = (None, "List or Dictionary of lists of syntax to remove.")
         config['visible'] = (['required', 'optional'],
                              "Parameter groups to show as un-collapsed.")
@@ -124,9 +123,6 @@ class AppSyntaxExtension(command.CommandExtension):
         self._object_cache = dict()
         self._syntax_cache = dict()
         self._external_missing_syntax = set() # page.uid
-
-        if self['hide'] is not None:
-            LOG.warning("The 'hide' option is no longer being used.")
 
     def preExecute(self):
         """Populate the application syntax tree."""
@@ -163,13 +159,13 @@ class AppSyntaxExtension(command.CommandExtension):
                                                                      unregister=self['unregister'],
                                                                      markdown=self['markdown'])
 
-                out = mooseutils.runExe(exe, ['--type'])
+                out = mooseutils.runExe(exe, ['--show-type'])
                 match = re.search(r'^MooseApp Type:\s+(?P<type>.*?)$', out, flags=re.MULTILINE)
                 if match:
                     self._app_type = match.group("type")
                 else:
                     msg = "Failed to determine application type by running the following:\n"
-                    msg += "    {} --type".format(exe)
+                    msg += "    {} --show-type".format(exe)
                     LOG.error(msg)
 
             except Exception as e:
@@ -773,12 +769,15 @@ class RenderParameterToken(components.RenderComponent):
         html.String(p, content=cpp_type, escape=True)
 
         doc_unit = param['doc_unit']
-        p = html.Tag(body, 'p', class_='moose-parameter-description-doc-unit')
-        html.Tag(p, 'span', string='Unit:')
-        if not doc_unit:
-            html.String(p, content='(no unit assumed)')
-        else:
-            html.String(p, content=doc_unit)
+        # Only display a unit if specified or if the type is likely to have a unit
+        if doc_unit or "double" in cpp_type or "Variable" in cpp_type or "Postprocessor" in cpp_type or "Funct" in cpp_type or "MaterialProperty" in cpp_type:
+            p = html.Tag(body, 'p', class_='moose-parameter-description-doc-unit')
+            html.Tag(p, 'span', string='Unit:')
+            # If a unit was specified, always display it
+            if doc_unit:
+                html.String(p, content=doc_unit)
+            else:
+                html.String(p, content='(no unit assumed)')
 
         if param['options']:
             p = html.Tag(body, 'p', class_='moose-parameter-description-options')

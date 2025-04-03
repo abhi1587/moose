@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -119,10 +119,10 @@ SideSetsGeneratorBase::setup(MeshBase & mesh)
   const auto dim = mesh.mesh_dimension();
 
   // Setup the FE Object so we can calculate normals
-  FEType fe_type(Utility::string_to_enum<Order>("CONSTANT"),
-                 Utility::string_to_enum<FEFamily>("MONOMIAL"));
-  _fe_face = FEBase::build(dim, fe_type);
-  _qface = std::make_unique<QGauss>(dim - 1, FIRST);
+  libMesh::FEType fe_type(Utility::string_to_enum<Order>("CONSTANT"),
+                          Utility::string_to_enum<libMesh::FEFamily>("MONOMIAL"));
+  _fe_face = libMesh::FEBase::build(dim, fe_type);
+  _qface = std::make_unique<libMesh::QGauss>(dim - 1, FIRST);
   _fe_face->attach_quadrature_rule(_qface.get());
   // Must always pre-request quantities you want to compute
   _fe_face->get_normals();

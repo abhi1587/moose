@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -36,10 +36,9 @@ INSFVMixingLengthTKEDBC::INSFVMixingLengthTKEDBC(const InputParameters & params)
 }
 
 ADReal
-INSFVMixingLengthTKEDBC::boundaryValue(const FaceInfo & fi) const
+INSFVMixingLengthTKEDBC::boundaryValue(const FaceInfo & fi, const Moose::StateArg & state) const
 {
   const auto boundary_face = singleSidedFaceArg(&fi);
-  const auto state = determineState();
 
   return std::pow(_C_mu(boundary_face, state), 0.75) * std::pow(_k(boundary_face, state), 1.5) /
          (0.07 * _characteristic_length(boundary_face, state));

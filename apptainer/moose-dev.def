@@ -23,9 +23,6 @@
 {#- Location to install miniforge3                                                            -#}
 {%- set MOOSE_MINIFORGE = '/opt/miniforge3' -%}
 
-{#- Name of the environment to create in conda                                                -#}
-{%- set MOOSE_CONDA_ENV_NAME = 'moose' -%}
-
 {#- The installation location for wasp                                                        -#}
 {%- set WASP_DIR = '/opt/wasp' -%}
 {#- The installation location for gperftools                                                  -#}
@@ -43,10 +40,12 @@
 
 BootStrap: {{ APPTAINER_BOOTSTRAP }}
 From: {{ APPTAINER_FROM }}
+# MOOSE-NCRC key
+Fingerprints: 0CFFCAB55E806363601C442D211817B01E0911DB
 
 %environment
     export PATH={{ MOOSE_MINIFORGE }}/bin:/opt/code-server/bin:$PATH
-    source activate {{ MOOSE_MINIFORGE }}/envs/{{ MOOSE_CONDA_ENV_NAME }}
+    source activate {{ MOOSE_MINIFORGE }}
 
     export WASP_DIR={{ WASP_DIR }}
     export PATH=${WASP_DIR}/bin:$PATH
@@ -83,7 +82,7 @@ From: {{ APPTAINER_FROM }}
     # Pinned versions
     MINIFORGE_VERSION=23.3.1-1
     PYTHON_VERSION=3.11
-    CODE_SERVER_VERSION=4.92.2
+    CODE_SERVER_VERSION=4.96.4
 
     # Install code-server
     CODE_SERVER_FILE=code-server-${CODE_SERVER_VERSION}-amd64.rpm
@@ -97,9 +96,9 @@ From: {{ APPTAINER_FROM }}
     # by the "setup-code-server-extensions" script (in PATH)
     mkdir /opt/code-server/extensions
     # Download extensions for code-server, currently just moose language support
-    MOOSE_LANGUAGE_SUPPORT_VERSION=1.1.2
+    MOOSE_LANGUAGE_SUPPORT_VERSION=1.3.2
     cd /opt/code-server/extensions
-    curl -L -O https://github.com/idaholab/moose-language-support/releases/download/v${MOOSE_LANGUAGE_SUPPORT_VERSION}/DanielSchwen.moose-language-support-${MOOSE_LANGUAGE_SUPPORT_VERSION}.vsix
+    curl -L -O https://github.com/idaholab/moose-language-support/releases/download/v${MOOSE_LANGUAGE_SUPPORT_VERSION}/moose-language-support-${MOOSE_LANGUAGE_SUPPORT_VERSION}.vsix
 
     # Setup permissions for the code server extras
     find /opt/code-server -type d -exec chmod 755 {} +
@@ -132,6 +131,10 @@ From: {{ APPTAINER_FROM }}
         rpm -i ${CUDA_RPM}
         dnf -y install cuda
         rm -rf ${CUDA_RPM}
+    # the CUDA libtorch needs a symlink for libnvrtc-builtins (the link removes the hash portion from the name)
+        cd ${LIBTORCH_DEST}/libtorch/lib
+        LIBNVRTC=$(ls libnvrtc-builtins-????????.so.*.* | head -n1)
+        ln -s $LIBNVRTC $(echo $LIBNVRTC | cut -d. -f1 | head -c-10).$(echo $LIBNVRTC | cut -d. -f2-)
 {%- endif %}
 {%- endif %}
 
@@ -153,10 +156,7 @@ From: {{ APPTAINER_FROM }}
     # Create list of Conda Packages to install
     MAMBA_PACKAGES="moose-tools=${MOOSE_TOOLS_VERSION}"
     # Install packages
-    mamba create -yq -n ${MOOSE_CONDA_ENV_NAME} python=${PYTHON_VERSION} ${MAMBA_PACKAGES}
-
-    # Activate the new environment
-    source activate ${MOOSE_MINIFORGE}/envs/${MOOSE_CONDA_ENV_NAME}
+    conda install -yq python=${PYTHON_VERSION} ${MAMBA_PACKAGES}
     # Needed for coverage
     pip3 --no-cache install lcov-cobertura
 

@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -50,11 +50,10 @@ INSFVTKEDWallFunctionBC::INSFVTKEDWallFunctionBC(const InputParameters & params)
 }
 
 ADReal
-INSFVTKEDWallFunctionBC::boundaryValue(const FaceInfo & fi) const
+INSFVTKEDWallFunctionBC::boundaryValue(const FaceInfo & fi, const Moose::StateArg & state) const
 {
   const Real dist = std::abs((fi.elemCentroid() - fi.faceCentroid()) * fi.normal());
   const Elem & _current_elem = fi.elem();
-  const auto state = determineState();
   const auto mu = _mu(makeElemArg(&_current_elem), state);
   const auto rho = _rho(makeElemArg(&_current_elem), state);
 

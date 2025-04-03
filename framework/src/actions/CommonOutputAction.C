@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -149,6 +149,12 @@ CommonOutputAction::validParams()
                         "screen. This parameter only affects the output of the third-party solver "
                         "(e.g. PETSc), not MOOSE itself.");
 
+  params.addParam<bool>(
+      "solution_invalidity_history",
+      true,
+      "Enable printing of the time history of the solution invalidity occurrences "
+      "to the screen (console)");
+
   // Return object
   return params;
 }
@@ -283,6 +289,11 @@ CommonOutputAction::act()
     perfGraph().setLiveTimeLimit(getParam<Real>("perf_graph_live_time_limit"));
     perfGraph().setLiveMemoryLimit(getParam<unsigned int>("perf_graph_live_mem_limit"));
 
+    if (getParam<bool>("solution_invalidity_history"))
+    {
+      create("SolutionInvalidityOutput", "solution_invalidity_history");
+    }
+
     if (!getParam<bool>("color"))
       Moose::setColorConsole(false);
   }
@@ -293,11 +304,11 @@ CommonOutputAction::act()
 
     if (!getParam<bool>("console") || (isParamValid("print_nonlinear_converged_reason") &&
                                        !getParam<bool>("print_nonlinear_converged_reason")))
-      Moose::PetscSupport::disableNonlinearConvergedReason(*_problem);
+      Moose::PetscSupport::dontAddNonlinearConvergedReason(*_problem);
 
     if (!getParam<bool>("console") || (isParamValid("print_linear_converged_reason") &&
                                        !getParam<bool>("print_linear_converged_reason")))
-      Moose::PetscSupport::disableLinearConvergedReason(*_problem);
+      Moose::PetscSupport::dontAddLinearConvergedReason(*_problem);
   }
   else
     mooseError("unrecognized task ", _current_task, " in CommonOutputAction.");

@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -25,6 +25,8 @@
 #include "VectorPostprocessor.h"
 
 #include "libmesh/fe_interface.h"
+
+using namespace libMesh;
 
 // A function, only available in this file, for adding the AdvancedOutput parameters. This is
 // used to eliminate code duplication between the difference specializations of the validParams
@@ -482,7 +484,7 @@ AdvancedOutput::initAvailableLists()
 void
 AdvancedOutput::initExecutionTypes(const std::string & name, ExecFlagEnum & input)
 {
-  // Build the input paramemter name
+  // Build the input parameter name
   std::string param_name = "execute_";
   param_name += name + "_on";
 

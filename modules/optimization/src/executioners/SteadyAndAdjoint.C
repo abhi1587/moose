@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -8,6 +8,7 @@
 //* https://www.gnu.org/licenses/lgpl-2.1.html
 
 #include "SteadyAndAdjoint.h"
+#include "FEProblemBase.h"
 
 registerMooseObject("OptimizationApp", SteadyAndAdjoint);
 
@@ -22,6 +23,13 @@ SteadyAndAdjoint::validParams()
   // We need the full matrix for the adjoint solve, so set this to NEWTON
   params.set<MooseEnum>("solve_type") = "newton";
   params.suppressParameter<MooseEnum>("solve_type");
+
+  // The adjoint system (second one) is solved by _adjoint_solve
+  // This is a parameter of the MultiSystemSolveObject, which we set from here, the executioner.
+  // We seek to prevent the MultiSystemSolveObject from solving both systems
+  // This is abusing input parameters, but SolveObjects do not have their own syntax
+  // and we need to send this parameter from the executioner to the default nested SolveObject
+  params.renameParam("system_names", "forward_system", "");
 
   return params;
 }

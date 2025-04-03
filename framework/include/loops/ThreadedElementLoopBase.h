@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -255,8 +255,8 @@ ThreadedElementLoopBase<RangeType>::operator()(const RangeType & range, bool byp
 
         onElement(elem);
 
-        if (elem->subdomain_id() == Moose::INTERNAL_SIDE_LOWERD_ID ||
-            elem->subdomain_id() == Moose::BOUNDARY_SIDE_LOWERD_ID)
+        if (_mesh.interiorLowerDBlocks().count(elem->subdomain_id()) > 0 ||
+            _mesh.boundaryLowerDBlocks().count(elem->subdomain_id()) > 0)
         {
           postElement(elem);
           continue;

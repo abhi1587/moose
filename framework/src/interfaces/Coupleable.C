@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -1168,6 +1168,20 @@ Coupleable::coupledDotDot(const std::string & var_name, unsigned int comp) const
   }
 }
 
+template <>
+const GenericVariableValue<false> &
+Coupleable::coupledGenericDotDot<false>(const std::string & var_name, unsigned int comp) const
+{
+  return coupledDotDot(var_name, comp);
+}
+
+template <>
+const GenericVariableValue<true> &
+Coupleable::coupledGenericDotDot<true>(const std::string & var_name, unsigned int comp) const
+{
+  return adCoupledDotDot(var_name, comp);
+}
+
 const VariableValue &
 Coupleable::coupledDotOld(const std::string & var_name, unsigned int comp) const
 {
@@ -1722,6 +1736,23 @@ Coupleable::coupledCurlOlder(const std::string & var_name, unsigned int comp) co
   return var->curlSlnOlderNeighbor();
 }
 
+const ADVectorVariableCurl &
+Coupleable::adCoupledCurl(const std::string & var_name, unsigned int comp) const
+{
+  const auto * var = getVectorVar(var_name, comp);
+
+  if (!var)
+    return getADDefaultCurl();
+  checkFuncType(var_name, VarType::Gradient, FuncAge::Curr);
+
+  if (!_c_is_implicit)
+    mooseError("Not implemented");
+
+  if (!_coupleable_neighbor)
+    return var->adCurlSln();
+  return var->adCurlSlnNeighbor();
+}
+
 const VectorVariableDivergence &
 Coupleable::coupledDiv(const std::string & var_name, unsigned int comp) const
 {
@@ -2207,12 +2238,18 @@ Coupleable::adCoupledDot(const std::string & var_name, unsigned int comp) const
     return *getADDefaultValue(var_name);
   checkFuncType(var_name, VarType::Dot, FuncAge::Curr);
 
-  if (_c_nodal)
-    mooseError("Not implemented");
-
   if (!_coupleable_neighbor)
+  {
+    if (_c_nodal)
+      return var->adDofValuesDot();
     return var->adUDot();
-  return var->adUDotNeighbor();
+  }
+  else
+  {
+    if (_c_nodal)
+      mooseError("AD neighbor nodal dof dot not implemented");
+    return var->adUDotNeighbor();
+  }
 }
 
 const ADVariableValue &
@@ -2332,6 +2369,13 @@ Coupleable::getADDefaultSecond() const
 {
   _ad_default_second.resize(_coupleable_max_qps);
   return _ad_default_second;
+}
+
+const ADVectorVariableCurl &
+Coupleable::getADDefaultCurl() const
+{
+  _ad_default_curl.resize(_coupleable_max_qps);
+  return _ad_default_curl;
 }
 
 const ADVariableValue &
@@ -2685,6 +2729,20 @@ Coupleable::adCoupledDots(const std::string & var_name) const
 {
   auto func = [this, &var_name](unsigned int comp) { return &adCoupledDot(var_name, comp); };
   return coupledVectorHelper<const ADVariableValue *>(var_name, func);
+}
+
+template <>
+const GenericVariableValue<false> &
+Coupleable::coupledGenericDot<false>(const std::string & var_name, unsigned int comp) const
+{
+  return coupledDot(var_name, comp);
+}
+
+template <>
+const GenericVariableValue<true> &
+Coupleable::coupledGenericDot<true>(const std::string & var_name, unsigned int comp) const
+{
+  return adCoupledDot(var_name, comp);
 }
 
 // Explicit instantiations

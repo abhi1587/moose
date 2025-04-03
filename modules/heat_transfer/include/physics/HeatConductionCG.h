@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -21,8 +21,12 @@ public:
 
   HeatConductionCG(const InputParameters & parameters);
 
+protected:
+  /// Whether to use automatic differentiation
+  const bool _use_ad;
+
 private:
-  void addNonlinearVariables() override;
+  void addSolverVariables() override;
   void addFEKernels() override;
   void addFEBCs() override;
 };

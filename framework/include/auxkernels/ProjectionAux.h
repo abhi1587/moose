@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -37,7 +37,7 @@ protected:
   const MooseVariableFieldBase & _source_variable;
 
   /// The system owning the source variable
-  const System & _source_sys;
+  const libMesh::System & _source_sys;
 
   /// Whether to use the auxkernel block restriction to limit the values for the source variables
   bool _use_block_restriction_for_source;

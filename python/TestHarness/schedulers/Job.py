@@ -1,5 +1,5 @@
 #* This file is part of the MOOSE framework
-#* https://www.mooseframework.org
+#* https://mooseframework.inl.gov
 #*
 #* All rights reserved, see COPYRIGHT for full restrictions
 #* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -764,9 +764,7 @@ class Job(OutputInterface):
         joint_status = self.getJointStatus()
 
         # Base job data
-        job_data = {'name'                 : self.getTestNameShort(),
-                    'long_name'            : self.getTestName(),
-                    'timing'               : self.timer.totalTimes(),
+        job_data = {'timing'               : self.timer.totalTimes(),
                     'status'               : joint_status.status,
                     'status_message'       : joint_status.message,
                     'fail'                 : self.isFail(),

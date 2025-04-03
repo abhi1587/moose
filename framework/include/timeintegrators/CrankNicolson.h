@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -45,7 +45,7 @@ protected:
 
   virtual Real duDotDuCoeff() const override;
 
-  NumericVector<Number> & _residual_old;
+  NumericVector<Number> * _residual_old;
 };
 
 template <typename T, typename T2>

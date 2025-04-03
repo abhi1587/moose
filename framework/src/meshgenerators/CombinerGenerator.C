@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -143,6 +143,13 @@ CombinerGenerator::generate()
 
     if (!mesh)
       paramError("inputs", _input_names[0], " is not a valid unstructured mesh");
+
+    // Move the first input mesh if applicable
+    if (_positions.size())
+    {
+      MeshTools::Modification::translate(
+          *mesh, _positions[0](0), _positions[0](1), _positions[0](2));
+    }
 
     // Read in all of the other meshes
     for (MooseIndex(_meshes) i = 1; i < _meshes.size(); ++i)

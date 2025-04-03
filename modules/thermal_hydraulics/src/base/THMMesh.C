@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -15,6 +15,8 @@
 #include "libmesh/face_quad4.h"
 #include "libmesh/face_quad9.h"
 
+using namespace libMesh;
+
 registerMooseObject("ThermalHydraulicsApp", THMMesh);
 
 const BoundaryName THMMesh::INVALID_BOUNDARY_ID = "invalid_boundary_id";
@@ -24,6 +26,8 @@ THMMesh::validParams()
 {
   InputParameters params = MooseMesh::validParams();
   params.addClassDescription("Creates a mesh (nodes and elements) for the Components");
+  MooseEnum dims("1=1 2 3", "3");
+  params.addParam<MooseEnum>("dim", dims, "The dimension of the mesh to be generated");
   // we do not allow renumbering, because we generate our meshes
   params.set<bool>("allow_renumbering") = false;
   return params;

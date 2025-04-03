@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -19,6 +19,8 @@
 #include "NonlinearSystemBase.h"
 
 #include "libmesh/string_to_enum.h"
+
+using namespace libMesh;
 
 registerMooseAction("PhaseFieldApp", GrainGrowthAction, "add_aux_variable");
 registerMooseAction("PhaseFieldApp", GrainGrowthAction, "add_aux_kernel");

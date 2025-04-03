@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -41,7 +41,7 @@ FunctionParserUtils<is_ad>::validParams()
 
   params.addParamNamesToGroup(
       "enable_jit enable_ad_cache enable_auto_optimize disable_fpoptimizer evalerror_behavior",
-      "Advanced");
+      "Parsed expression advanced");
   params.addParam<Real>("epsilon", FunctionParser::epsilon(), "Fuzzy comparison tolerance");
   return params;
 }
@@ -86,6 +86,15 @@ template <bool is_ad>
 GenericReal<is_ad>
 FunctionParserUtils<is_ad>::evaluate(SymFunctionPtr & parser, const std::string & name)
 {
+  return evaluate(parser, _func_params, name);
+}
+
+template <bool is_ad>
+GenericReal<is_ad>
+FunctionParserUtils<is_ad>::evaluate(SymFunctionPtr & parser,
+                                     const std::vector<GenericReal<is_ad>> & func_params,
+                                     const std::string & name)
+{
   // null pointer is a shortcut for vanishing derivatives, see functionsOptimize()
   if (parser == NULL)
     return 0.0;
@@ -95,7 +104,7 @@ FunctionParserUtils<is_ad>::evaluate(SymFunctionPtr & parser, const std::string 
   parser->setEpsilon(_epsilon);
 
   // evaluate expression
-  auto result = parser->Eval(_func_params.data());
+  auto result = parser->Eval(func_params.data());
 
   // restore epsilon
   parser->setEpsilon(tmp_eps);
@@ -148,7 +157,7 @@ FunctionParserUtils<is_ad>::addFParserConstants(
   unsigned int nconst = constant_expressions.size();
   if (nconst != constant_names.size())
     mooseError("The parameter vectors constant_names (size " +
-               std::to_string(constant_names.size()) + ") and constant_values (size " +
+               std::to_string(constant_names.size()) + ") and constant_expressions (size " +
                std::to_string(nconst) + ") must have equal length.");
 
   // previously evaluated constant_expressions may be used in following constant_expressions

@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -44,7 +44,7 @@ VTKOutput::output()
 {
 #ifdef LIBMESH_HAVE_VTK
   /// Create VTKIO object
-  VTKIO vtk(_es_ptr->get_mesh());
+  libMesh::VTKIO vtk(_es_ptr->get_mesh());
 
   // Set the comppression
   vtk.set_compression(_binary);

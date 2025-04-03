@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -32,10 +32,10 @@ template <typename T>
 T stringToEnum(const std::string & s);
 
 template <>
-QuadratureType stringToEnum<QuadratureType>(const std::string & s);
+libMesh::QuadratureType stringToEnum<libMesh::QuadratureType>(const std::string & s);
 
 template <>
-Order stringToEnum<Order>(const std::string & s);
+libMesh::Order stringToEnum<libMesh::Order>(const std::string & s);
 
 template <>
 CoordinateSystemType stringToEnum<CoordinateSystemType>(const std::string & s);
@@ -118,7 +118,7 @@ std::string stringify(const VarFieldType & t);
 std::string stringify(const std::string & s);
 
 /// Convert FEType from libMesh into string
-std::string stringify(FEFamily f);
+std::string stringify(libMesh::FEFamily f);
 
 /// Convert SolutionIterationType into string
 std::string stringify(SolutionIterationType t);

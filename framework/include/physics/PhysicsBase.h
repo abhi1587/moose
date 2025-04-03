@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -86,7 +86,7 @@ public:
 
   // Coupling with Components //
   /// Get a component with the requested name
-  const ActionComponent & getActionComponent(const ComponentName & comp_name);
+  const ActionComponent & getActionComponent(const ComponentName & comp_name) const;
   /// Check that the component is of the desired type
   template <typename T>
   void checkComponentType(const ActionComponent & component) const;
@@ -94,8 +94,8 @@ public:
   /// restriction of the Physics. More complex behavior should be implemented by overriding
   virtual void addComponent(const ActionComponent & component);
 
-  /// Return the list of nonlinear variables in this physics
-  const std::vector<VariableName> & nonlinearVariableNames() const { return _nl_var_names; };
+  /// Return the list of solver (nonlinear + linear) variables in this physics
+  const std::vector<VariableName> & solverVariableNames() const { return _solver_var_names; };
   /// Return the list of aux variables in this physics
   const std::vector<VariableName> & auxVariableNames() const { return _aux_var_names; };
 
@@ -105,8 +105,8 @@ protected:
 
   /// Get the factory for this physics
   /// The factory lets you get the parameters for objects
-  virtual Factory & getFactory() { return _factory; }
-  virtual Factory & getFactory() const { return _factory; }
+  Factory & getFactory() { return _factory; }
+  Factory & getFactory() const { return _factory; }
   /// Get the problem for this physics
   /// Useful to add objects to the simulation
   virtual FEProblemBase & getProblem()
@@ -134,13 +134,24 @@ protected:
   /// Use prefix() to disambiguate names
   std::string prefix() const { return name() + "_"; }
 
-  /// Keep track of the name of a nonlinear variable defined in the Physics
-  void saveSolverVariableName(const VariableName & var_name) { _nl_var_names.push_back(var_name); }
+  /// Keep track of the name of the solver variable defined in the Physics
+  void saveSolverVariableName(const VariableName & var_name)
+  {
+    _solver_var_names.push_back(var_name);
+  }
   /// Keep track of the name of an aux variable defined in the Physics
   void saveAuxVariableName(const VariableName & var_name) { _aux_var_names.push_back(var_name); }
 
   /// Check whether a variable already exists
   bool variableExists(const VariableName & var_name, bool error_if_aux) const;
+  /// Check whether a variable already exists and is a solver variable
+  bool solverVariableExists(const VariableName & var_name) const;
+
+  /// Get the solver system for this variable index. The index should be the index of the variable in solver
+  /// var_names (currently _solver_var_names) vector
+  const SolverSystemName & getSolverSystem(unsigned int variable_index) const;
+  /// Get the solver system for this variable name
+  const SolverSystemName & getSolverSystem(const VariableName & variable_name) const;
 
   /// Add a new required task for all physics deriving from this class
   /// NOTE: This does not register the task, you still need to call registerMooseAction
@@ -158,8 +169,17 @@ protected:
    */
   bool allMeshBlocks(const std::vector<SubdomainName> & blocks) const;
 
-  /// System number for the system owning the variables
-  const unsigned int _sys_number;
+  /**
+   * Process the given petsc option pairs into the system solver settings
+   */
+  void addPetscPairsToPetscOptions(
+      const std::vector<std::pair<MooseEnumItem, std::string>> & petsc_pair_options);
+
+  /// System names for the system(s) owning the solver variables
+  std::vector<SolverSystemName> _system_names;
+
+  /// System numbers for the system(s) owning the solver variables
+  std::vector<unsigned int> _system_numbers;
 
   /// Whether to output additional information
   const bool _verbose;
@@ -183,10 +203,12 @@ private:
   virtual void initializePhysicsAdditional() {}
   /// Additional checks performed once the executioner / executor has been created
   virtual void checkIntegrityEarly() const;
+  /// Additional checks performed near the end of the setup phase
+  virtual void checkIntegrity() const {}
 
   /// The default implementation of these routines will do nothing as we do not expect all Physics
   /// to be defining an object of every type
-  virtual void addNonlinearVariables() {}
+  virtual void addSolverVariables() {}
   virtual void addAuxiliaryVariables() {}
   virtual void addInitialConditions() {}
   virtual void addFEKernels() {}
@@ -224,8 +246,8 @@ private:
   /// some physics directly to steady state
   MooseEnum _is_transient;
 
-  /// Vector of the nonlinear variables in the Physics
-  std::vector<VariableName> _nl_var_names;
+  /// Vector of the solver variables (nonlinear and linear) in the Physics
+  std::vector<VariableName> _solver_var_names;
   /// Vector of the aux variables in the Physics
   std::vector<VariableName> _aux_var_names;
 

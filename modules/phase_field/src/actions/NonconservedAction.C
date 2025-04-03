@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -17,6 +17,8 @@
 #include "MooseMesh.h"
 
 #include "libmesh/string_to_enum.h"
+
+using namespace libMesh;
 
 registerMooseAction("PhaseFieldApp", NonconservedAction, "add_variable");
 
@@ -64,7 +66,7 @@ NonconservedAction::NonconservedAction(const InputParameters & params)
   : Action(params),
     _var_name(name()),
     _fe_type(Utility::string_to_enum<Order>(getParam<MooseEnum>("order")),
-             Utility::string_to_enum<FEFamily>(getParam<MooseEnum>("family")))
+             Utility::string_to_enum<libMesh::FEFamily>(getParam<MooseEnum>("family")))
 {
 }
 

@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -43,10 +43,10 @@ public:
 
   PenetrationLocator & getPenetrationLocator(const BoundaryName & primary,
                                              const BoundaryName & secondary,
-                                             Order order = FIRST);
+                                             libMesh::Order order = libMesh::FIRST);
   PenetrationLocator & getQuadraturePenetrationLocator(const BoundaryName & primary,
                                                        const BoundaryName & secondary,
-                                                       Order order = FIRST);
+                                                       libMesh::Order order = libMesh::FIRST);
 
   NearestNodeLocator & getNearestNodeLocator(const BoundaryName & primary,
                                              const BoundaryName & secondary);

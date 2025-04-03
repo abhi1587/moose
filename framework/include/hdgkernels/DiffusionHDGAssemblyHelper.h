@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -63,10 +63,10 @@ protected:
    * functions, and u is the diffused scalar field
    */
   void vectorVolumeResidual(const unsigned int i_offset,
-                            const MooseArray<Gradient> & vector_sol,
+                            const MooseArray<libMesh::Gradient> & vector_sol,
                             const MooseArray<Number> & scalar_sol,
                             const MooseArray<Real> & JxW,
-                            const QBase & qrule);
+                            const libMesh::QBase & qrule);
 
   /**
    * Computes a local Jacobian matrix for the weak form:
@@ -78,7 +78,7 @@ protected:
                             const unsigned int vector_j_offset,
                             const unsigned int scalar_j_offset,
                             const MooseArray<Real> & JxW,
-                            const QBase & qrule);
+                            const libMesh::QBase & qrule);
 
   /**
    * Computes a local residual vector for the weak form:
@@ -87,10 +87,10 @@ protected:
    * a forcing function
    */
   void scalarVolumeResidual(const unsigned int i_offset,
-                            const MooseArray<Gradient> & vector_field,
+                            const MooseArray<libMesh::Gradient> & vector_field,
                             const Moose::Functor<Real> & source,
                             const MooseArray<Real> & JxW,
-                            const QBase & qrule,
+                            const libMesh::QBase & qrule,
                             const Elem * const current_elem,
                             const MooseArray<Point> & q_point);
 
@@ -103,7 +103,7 @@ protected:
   void scalarVolumeJacobian(const unsigned int i_offset,
                             const unsigned int vector_field_j_offset,
                             const MooseArray<Real> & JxW,
-                            const QBase & qrule);
+                            const libMesh::QBase & qrule);
 
   //
   // Methods which can be leveraged both on internal sides in the kernel and by boundary conditions
@@ -118,7 +118,7 @@ protected:
   void vectorFaceResidual(const unsigned int i_offset,
                           const MooseArray<Number> & lm_sol,
                           const MooseArray<Real> & JxW_face,
-                          const QBase & qrule_face,
+                          const libMesh::QBase & qrule_face,
                           const MooseArray<Point> & normals);
 
   /**
@@ -130,7 +130,7 @@ protected:
   void vectorFaceJacobian(const unsigned int i_offset,
                           const unsigned int lm_j_offset,
                           const MooseArray<Real> & JxW_face,
-                          const QBase & qrule_face,
+                          const libMesh::QBase & qrule_face,
                           const MooseArray<Point> & normals);
 
   /**
@@ -138,11 +138,11 @@ protected:
    * -<Dq*n, w> + <\tau * (u - \hat{u}) * n * n, w>
    */
   void scalarFaceResidual(const unsigned int i_offset,
-                          const MooseArray<Gradient> & vector_sol,
+                          const MooseArray<libMesh::Gradient> & vector_sol,
                           const MooseArray<Number> & scalar_sol,
                           const MooseArray<Number> & lm_sol,
                           const MooseArray<Real> & JxW_face,
-                          const QBase & qrule_face,
+                          const libMesh::QBase & qrule_face,
                           const MooseArray<Point> & normals);
 
   /**
@@ -154,7 +154,7 @@ protected:
                           const unsigned int scalar_j_offset,
                           const unsigned int lm_j_offset,
                           const MooseArray<Real> & JxW_face,
-                          const QBase & qrule_face,
+                          const libMesh::QBase & qrule_face,
                           const MooseArray<Point> & normals);
 
   /**
@@ -162,11 +162,11 @@ protected:
    * -<Dq*n, \mu> + <\tau * (u - \hat{u}) * n * n, \mu>
    */
   void lmFaceResidual(const unsigned int i_offset,
-                      const MooseArray<Gradient> & vector_sol,
+                      const MooseArray<libMesh::Gradient> & vector_sol,
                       const MooseArray<Number> & scalar_sol,
                       const MooseArray<Number> & lm_sol,
                       const MooseArray<Real> & JxW_face,
-                      const QBase & qrule_face,
+                      const libMesh::QBase & qrule_face,
                       const MooseArray<Point> & normals);
 
   /**
@@ -178,7 +178,7 @@ protected:
                       const unsigned int scalar_j_offset,
                       const unsigned int lm_j_offset,
                       const MooseArray<Real> & JxW_face,
-                      const QBase & qrule_face,
+                      const libMesh::QBase & qrule_face,
                       const MooseArray<Point> & normals);
 
   /**
@@ -187,7 +187,7 @@ protected:
   void vectorDirichletResidual(const unsigned int i_offset,
                                const Moose::Functor<Real> & dirichlet_value,
                                const MooseArray<Real> & JxW_face,
-                               const QBase & qrule_face,
+                               const libMesh::QBase & qrule_face,
                                const MooseArray<Point> & normals,
                                const Elem * const current_elem,
                                const unsigned int current_side,
@@ -197,11 +197,11 @@ protected:
    * Weakly imposes a Dirichlet condition for the scalar field in the scalar field equation
    */
   void scalarDirichletResidual(const unsigned int i_offset,
-                               const MooseArray<Gradient> & vector_sol,
+                               const MooseArray<libMesh::Gradient> & vector_sol,
                                const MooseArray<Number> & scalar_sol,
                                const Moose::Functor<Real> & dirichlet_value,
                                const MooseArray<Real> & JxW_face,
-                               const QBase & qrule_face,
+                               const libMesh::QBase & qrule_face,
                                const MooseArray<Point> & normals,
                                const Elem * const current_elem,
                                const unsigned int current_side,
@@ -215,7 +215,7 @@ protected:
                                const unsigned int vector_j_offset,
                                const unsigned int scalar_j_offset,
                                const MooseArray<Real> & JxW_face,
-                               const QBase & qrule_face,
+                               const libMesh::QBase & qrule_face,
                                const MooseArray<Point> & normals);
 
   const MooseVariableFE<Real> & _u_var;
@@ -228,7 +228,7 @@ protected:
   const std::vector<dof_id_type> & _lm_u_dof_indices;
 
   // local solutions at quadrature points
-  const MooseArray<Gradient> & _qu_sol;
+  const MooseArray<libMesh::Gradient> & _qu_sol;
   const MooseArray<Number> & _u_sol;
   const MooseArray<Number> & _lm_u_sol;
 

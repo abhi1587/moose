@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -270,10 +270,10 @@ RankTwoTensorTempl<T>::fillFromScalarVariable(const VariableValue & scalar_varia
 }
 
 template <typename T>
-VectorValue<T>
+libMesh::VectorValue<T>
 RankTwoTensorTempl<T>::column(const unsigned int c) const
 {
-  return VectorValue<T>((*this)(0, c), (*this)(1, c), (*this)(2, c));
+  return libMesh::VectorValue<T>((*this)(0, c), (*this)(1, c), (*this)(2, c));
 }
 
 template <typename T>
@@ -367,14 +367,6 @@ RankTwoTensorTempl<T>
 RankTwoTensorTempl<T>::transpose() const
 {
   return libMesh::TensorValue<T>::transpose();
-}
-
-template <typename T>
-RankTwoTensorTempl<T> &
-RankTwoTensorTempl<T>::operator=(const RankTwoTensorTempl<T> & a)
-{
-  libMesh::TensorValue<T>::operator=(a);
-  return *this;
 }
 
 template <typename T>
@@ -484,7 +476,7 @@ RankTwoTensorTempl<T>::contraction(const RankThreeTensorTempl<T> & b) const
 
 template <typename T>
 RankThreeTensorTempl<T>
-RankTwoTensorTempl<T>::mixedProductJkI(const VectorValue<T> & b) const
+RankTwoTensorTempl<T>::mixedProductJkI(const libMesh::VectorValue<T> & b) const
 {
   RankThreeTensorTempl<T> result;
 

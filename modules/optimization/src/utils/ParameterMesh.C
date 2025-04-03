@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -16,6 +16,8 @@
 #include "libmesh/fe_interface.h"
 #include "libmesh/numeric_vector.h"
 #include "libmesh/explicit_system.h"
+
+using namespace libMesh;
 
 ParameterMesh::ParameterMesh(const FEType & param_type,
                              const std::string & exodus_mesh,

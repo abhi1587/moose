@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -30,6 +30,8 @@
 
 #include <regex>
 
+using namespace libMesh;
+
 InputParameters
 SubProblem::validParams()
 {
@@ -44,6 +46,15 @@ SubProblem::validParams()
 
   return params;
 }
+
+const std::unordered_set<FEFamily> SubProblem::_default_families_without_p_refinement = {
+    libMesh::LAGRANGE,
+    libMesh::NEDELEC_ONE,
+    libMesh::RAVIART_THOMAS,
+    libMesh::LAGRANGE_VEC,
+    libMesh::CLOUGH,
+    libMesh::BERNSTEIN,
+    libMesh::RATIONAL_BERNSTEIN};
 
 // SubProblem /////
 SubProblem::SubProblem(const InputParameters & parameters)
@@ -133,6 +144,18 @@ SubProblem::vectorTagExists(const TagName & tag_name) const
       return true;
 
   return false;
+}
+
+void
+SubProblem::addNotZeroedVectorTag(const TagID tag)
+{
+  _not_zeroed_tagged_vectors.insert(tag);
+}
+
+bool
+SubProblem::vectorTagNotZeroed(const TagID tag) const
+{
+  return _not_zeroed_tagged_vectors.count(tag);
 }
 
 const VectorTag &
@@ -690,6 +713,14 @@ SubProblem::checkBoundaryMatProps()
     mooseError(errors.str());
 }
 
+bool
+SubProblem::nlConverged(const unsigned int nl_sys_num)
+{
+  mooseAssert(nl_sys_num < numNonlinearSystems(),
+              "The nonlinear system number is higher than the number of systems we have!");
+  return solverSystemConverged(nl_sys_num);
+}
+
 void
 SubProblem::markMatPropRequested(const std::string & prop_name)
 {
@@ -772,6 +803,21 @@ unsigned int
 SubProblem::getAxisymmetricRadialCoord() const
 {
   return mesh().getAxisymmetricRadialCoord();
+}
+
+bool
+SubProblem::hasLinearVariable(const std::string & var_name) const
+{
+  for (const auto i : make_range(numLinearSystems()))
+    if (systemBaseLinear(i).hasVariable(var_name))
+      return true;
+  return false;
+}
+
+bool
+SubProblem::hasAuxiliaryVariable(const std::string & var_name) const
+{
+  return systemBaseAuxiliary().hasVariable(var_name);
 }
 
 template <typename T>
@@ -1284,44 +1330,51 @@ SubProblem::addCachedJacobian(const THREAD_ID tid)
 }
 
 void
-SubProblem::doingPRefinement(const bool doing_p_refinement,
-                             const MultiMooseEnum & disable_p_refinement_for_families_enum)
+SubProblem::preparePRefinement()
 {
-  mesh().doingPRefinement(doing_p_refinement);
+  std::unordered_set<FEFamily> disable_families;
+  for (const auto & [family, flag] : _family_for_p_refinement)
+    if (flag)
+      disable_families.insert(family);
 
-  if (doing_p_refinement)
-  {
-    std::vector<FEFamily> disable_families(disable_p_refinement_for_families_enum.size());
-    for (const auto i : index_range(disable_families))
-      disable_families[i] =
-          Utility::string_to_enum<FEFamily>(disable_p_refinement_for_families_enum[i]);
+  for (const auto tid : make_range(libMesh::n_threads()))
+    for (const auto s : make_range(numNonlinearSystems()))
+      assembly(tid, s).havePRefinement(disable_families);
 
-    for (const auto tid : make_range(libMesh::n_threads()))
-      for (const auto s : make_range(numNonlinearSystems()))
-        assembly(tid, s).havePRefinement(disable_families);
-
-    auto & eq = es();
-    for (const auto family : disable_families)
-      for (const auto i : make_range(eq.n_systems()))
+  auto & eq = es();
+  for (const auto family : disable_families)
+    for (const auto i : make_range(eq.n_systems()))
+    {
+      auto & system = eq.get_system(i);
+      auto & dof_map = system.get_dof_map();
+      for (const auto vg : make_range(system.n_variable_groups()))
       {
-        auto & system = eq.get_system(i);
-        auto & dof_map = system.get_dof_map();
-        for (const auto vg : make_range(system.n_variable_groups()))
-        {
-          const auto & var_group = system.variable_group(vg);
-          if (var_group.type().family == family)
-            dof_map.should_p_refine(vg, false);
-        }
+        const auto & var_group = system.variable_group(vg);
+        if (var_group.type().family == family)
+          dof_map.should_p_refine(vg, false);
       }
+    }
 
-    _have_p_refinement = true;
-  }
+  _have_p_refinement = true;
 }
 
 bool
 SubProblem::doingPRefinement() const
 {
   return mesh().doingPRefinement();
+}
+
+void
+SubProblem::markFamilyPRefinement(const InputParameters & params)
+{
+  auto family = Utility::string_to_enum<FEFamily>(params.get<MooseEnum>("family"));
+  bool flag = _default_families_without_p_refinement.count(family);
+  if (params.isParamValid("disable_p_refinement"))
+    flag = params.get<bool>("disable_p_refinement");
+
+  auto [it, inserted] = _family_for_p_refinement.emplace(family, flag);
+  if (!inserted && flag != it->second)
+    mooseError("'disable_p_refinement' not set consistently for variables in ", family);
 }
 
 void

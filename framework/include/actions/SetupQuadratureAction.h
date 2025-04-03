@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -50,7 +50,7 @@ public:
   }
 
 protected:
-  QuadratureType _type;
+  libMesh::QuadratureType _type;
   Order _order;
   Order _element_order;
   Order _side_order;

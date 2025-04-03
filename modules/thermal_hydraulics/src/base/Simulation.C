@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -31,6 +31,8 @@
 #include "ExplicitTVDRK2.h"
 
 #include "libmesh/string_to_enum.h"
+
+using namespace libMesh;
 
 std::map<VariableName, int> Simulation::_component_variable_order_map;
 
@@ -631,7 +633,7 @@ Simulation::sortAddedComponentVariables() const
 void
 Simulation::addVariables()
 {
-  Transient * trex = dynamic_cast<Transient *>(getApp().getExecutioner());
+  TransientBase * trex = dynamic_cast<TransientBase *>(getApp().getExecutioner());
   if (trex)
   {
     Moose::TimeIntegratorType ti_type = trex->getTimeScheme();

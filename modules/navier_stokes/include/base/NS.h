@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -54,6 +54,8 @@ static const std::string superficial_velocity = "superficial_velocity";
 static const std::string superficial_velocity_vector[3] = {
     superficial_velocity_x, superficial_velocity_y, superficial_velocity_z};
 static const std::string pressure = "pressure";
+// Starting variable name with pressure so it is displayed next to pressure in outputs
+static const std::string total_pressure = "pressure_total";
 static const std::string temperature = "temperature";
 
 static const std::string internal_energy = "internal_energy";

@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -36,6 +36,7 @@
 #include <filesystem>
 #include <ctime>
 #include <cstdlib>
+#include <regex>
 
 // System includes
 #include <sys/stat.h>
@@ -226,6 +227,12 @@ trim(const std::string & str, const std::string & white_space)
   return str.substr(begin, end - begin + 1);
 }
 
+std::string
+removeExtraWhitespace(const std::string & input)
+{
+  return std::regex_replace(input, std::regex("^\\s+|\\s+$|\\s+(?=\\s)"), "");
+}
+
 bool
 pathContains(const std::string & expression,
              const std::string & string_to_find,
@@ -247,15 +254,6 @@ pathExists(const std::string & path)
 {
   struct stat buffer;
   return (stat(path.c_str(), &buffer) == 0);
-}
-
-bool
-pathIsDirectory(const std::string & path)
-{
-  // We use the non-throwing overload of this so that we suppress any issues with
-  // reading and just report it as an unavailable directory
-  std::error_code ec;
-  return std::filesystem::is_directory(path, ec);
 }
 
 bool
@@ -1074,6 +1072,23 @@ toLower(const std::string & name)
   return lower;
 }
 
+std::string
+stringJoin(const std::vector<std::string> & values, const std::string & separator)
+{
+  std::string combined;
+  for (const auto & value : values)
+    combined += value + separator;
+  if (values.size())
+    combined = combined.substr(0, combined.size() - separator.size());
+  return combined;
+}
+
+bool
+beginsWith(const std::string & value, const std::string & begin_value)
+{
+  return value.rfind(begin_value, 0) == 0;
+}
+
 ExecFlagEnum
 getDefaultExecFlagEnum()
 {
@@ -1272,6 +1287,13 @@ prettyCppType(const std::string & cpp_type)
   r.GlobalReplace("std::vector<\\1>", &s);
   return s;
 }
+
+std::string
+canonicalPath(const std::string & path)
+{
+  return std::filesystem::weakly_canonical(path).c_str();
+}
+
 } // MooseUtils namespace
 
 void

@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -337,7 +337,7 @@ protected:
   PerfGraphRegistry & _perf_graph_registry;
 
   /// This processor id
-  const processor_id_type _pid;
+  const libMesh::processor_id_type _pid;
 
   /// Name of the root node
   const std::string _root_name;

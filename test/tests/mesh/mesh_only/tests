@@ -24,17 +24,6 @@
     requirement = 'The system shall print out information about the mesh when writing out the mesh and avoid emitting petsc warnings in mesh-only mode.'
   []
 
-  [mesh_only_warning]
-    type = RunApp
-    input = 'mesh_only.i'
-    # Intentional error (not a mesh filename)
-    cli_args = '--mesh-only Outputs/exodus=false'
-    allow_warnings = true
-    expect_out = 'The --mesh-only option should be followed by a file name.'
-    issues = '#1568'
-    requirement = 'The system shall warn when using --mesh-only and there is no clear filename to use'
-  []
-
   [output_dimension_override]
     type = 'Exodiff'
     input = 'output_dimension_override.i'
@@ -88,5 +77,35 @@
     method = '!dbg'
     issues = '#23386'
     requirement = 'The system shall throw a warning if user-provided extra element id names do not exist on mesh.'
+  []
+  [mesh_only_with_check_input]
+    type = 'RunApp'
+    input = 'mesh_only.i'
+    cli_args = '--check-input --mesh-only'
+    expect_out = 'Syntax OK'
+    max_parallel = 1
+    issues = '#29788'
+    requirement = 'The system shall report the successful parsing and interpretation of input file sytax when using the "--check-input" and "--mesh-only" command line flags'
+  []
+  [mesh_only_with_check_input_unused_param]
+    type = 'RunException'
+    input = 'mesh_only.i'
+    cli_args = 'Mesh/extrude/x=5 --check-input --mesh-only'
+    expect_err = "unused parameter 'Mesh/extrude/x"
+    method = '!dbg'
+    issues = '#29788'
+    requirement = 'The system shall throw an error about unused parameters if --mesh-only is used with --check-input'
+    should_crash = true
+  []
+  [mesh_only_warning_unused]
+    type = 'RunException'
+    input = 'mesh_only.i'
+    cli_args = 'Mesh/extrude/x=5 --mesh-only'
+    expect_err = "unused parameter 'Mesh/extrude/x"
+    recover = false
+    method = '!dbg'
+    issues = '#14550'
+    requirement = 'The system shall throw a warning if an unused parameter exists in Mesh block in --mesh-only mode'
+    should_crash = true
   []
 []

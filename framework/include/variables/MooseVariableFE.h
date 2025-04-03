@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -146,7 +146,7 @@ public:
 
   bool isNodal() const override { return _element_data->isNodal(); }
   bool hasDoFsOnNodes() const override { return _element_data->hasDoFsOnNodes(); }
-  FEContinuity getContinuity() const override { return _element_data->getContinuity(); };
+  libMesh::FEContinuity getContinuity() const override { return _element_data->getContinuity(); };
   const Node * const & node() const { return _element_data->node(); }
   const dof_id_type & nodalDofIndex() const override { return _element_data->nodalDofIndex(); }
   virtual bool isNodalDefined() const override;
@@ -359,6 +359,10 @@ public:
   {
     return _element_data->adGradSlnDot();
   }
+  const ADTemplateVariableCurl<OutputType> & adCurlSln() const override
+  {
+    return _element_data->adCurlSln();
+  }
 
   /// neighbor AD
   const ADTemplateVariableValue<OutputType> & adSlnNeighbor() const override
@@ -384,6 +388,10 @@ public:
   const ADTemplateVariableGradient<OutputType> & adGradSlnNeighborDot() const override
   {
     return _neighbor_data->adGradSlnDot();
+  }
+  const ADTemplateVariableCurl<OutputType> & adCurlSlnNeighbor() const override
+  {
+    return _neighbor_data->adCurlSln();
   }
 
   /// element dots
@@ -513,7 +521,7 @@ public:
   /**
    * Write a nodal value to the passed-in solution vector
    */
-  void insertNodalValue(NumericVector<Number> & residual, const OutputData & v);
+  void insertNodalValue(libMesh::NumericVector<libMesh::Number> & residual, const OutputData & v);
 
   /**
    * Get the value of this variable at given node
@@ -552,23 +560,23 @@ public:
   /**
    * Set the current local DOF values to the input vector
    */
-  virtual void insert(NumericVector<Number> & vector) override;
-  virtual void insertLower(NumericVector<Number> & vector) override;
+  virtual void insert(libMesh::NumericVector<libMesh::Number> & vector) override;
+  virtual void insertLower(libMesh::NumericVector<libMesh::Number> & vector) override;
 
   /**
    * Add the current local DOF values to the input vector
    */
-  virtual void add(NumericVector<Number> & vector) override;
+  virtual void add(libMesh::NumericVector<libMesh::Number> & vector) override;
 
   /**
    * Add passed in local DOF values onto the current solution
    */
-  void addSolution(const DenseVector<Number> & v);
+  void addSolution(const DenseVector<libMesh::Number> & v);
 
   /**
    * Add passed in local neighbor DOF values onto the current solution
    */
-  void addSolutionNeighbor(const DenseVector<Number> & v);
+  void addSolutionNeighbor(const DenseVector<libMesh::Number> & v);
 
   const DoFValue & dofValue() const;
   const DoFValue & dofValues() const override;
@@ -589,30 +597,24 @@ public:
   const DoFValue & dofValuesDotDotNeighborResidual() const;
   const DoFValue & dofValuesDotDotOld() const override;
   const DoFValue & dofValuesDotDotOldNeighbor() const override;
-  const MooseArray<Number> & dofValuesDuDotDu() const override;
-  const MooseArray<Number> & dofValuesDuDotDuNeighbor() const override;
-  const MooseArray<Number> & dofValuesDuDotDotDu() const override;
-  const MooseArray<Number> & dofValuesDuDotDotDuNeighbor() const override;
+  const MooseArray<libMesh::Number> & dofValuesDuDotDu() const override;
+  const MooseArray<libMesh::Number> & dofValuesDuDotDuNeighbor() const override;
+  const MooseArray<libMesh::Number> & dofValuesDuDotDotDu() const override;
+  const MooseArray<libMesh::Number> & dofValuesDuDotDotDuNeighbor() const override;
 
-  /**
-   * Return the AD dof values
-   */
   const MooseArray<ADReal> & adDofValues() const override;
-
-  /**
-   * Return the AD neignbor dof values
-   */
   const MooseArray<ADReal> & adDofValuesNeighbor() const override;
+  const MooseArray<ADReal> & adDofValuesDot() const override;
 
   /**
    * Compute and store incremental change in solution at QPs based on increment_vec
    */
-  void computeIncrementAtQps(const NumericVector<Number> & increment_vec);
+  void computeIncrementAtQps(const libMesh::NumericVector<libMesh::Number> & increment_vec);
 
   /**
    * Compute and store incremental change at the current node based on increment_vec
    */
-  void computeIncrementAtNode(const NumericVector<Number> & increment_vec);
+  void computeIncrementAtNode(const libMesh::NumericVector<libMesh::Number> & increment_vec);
 
   /**
    * Compute the variable value at a point on an element
@@ -842,6 +844,13 @@ inline const MooseArray<ADReal> &
 MooseVariableFE<OutputType>::adDofValuesNeighbor() const
 {
   return _neighbor_data->adDofValues();
+}
+
+template <typename OutputType>
+inline const MooseArray<ADReal> &
+MooseVariableFE<OutputType>::adDofValuesDot() const
+{
+  return _element_data->adDofValuesDot();
 }
 
 template <typename OutputType>

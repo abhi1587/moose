@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -67,6 +67,7 @@ WCNSFVFlowPhysicsBase::validParams()
   // Specify the numerical schemes for interpolations of velocity and pressure
   params.transferParam<MooseEnum>(NSFVBase::validParams(), "velocity_interpolation");
   params.transferParam<MooseEnum>(NSFVBase::validParams(), "momentum_advection_interpolation");
+  params.transferParam<bool>(NSFVBase::validParams(), "momentum_two_term_bc_expansion");
   params.transferParam<bool>(NSFVBase::validParams(), "pressure_two_term_bc_expansion");
   MooseEnum coeff_interp_method("average harmonic", "harmonic");
   params.addParam<MooseEnum>("mu_interp_method",
@@ -83,9 +84,10 @@ WCNSFVFlowPhysicsBase::validParams()
                               "Outlet boundary conditions");
   params.addParamNamesToGroup("wall_boundaries momentum_wall_types momentum_wall_functors",
                               "Wall boundary conditions");
-  params.addParamNamesToGroup("velocity_interpolation momentum_advection_interpolation "
-                              "pressure_two_term_bc_expansion mu_interp_method",
-                              "Numerical scheme");
+  params.addParamNamesToGroup(
+      "velocity_interpolation momentum_advection_interpolation "
+      "momentum_two_term_bc_expansion pressure_two_term_bc_expansion mu_interp_method",
+      "Numerical scheme");
   params.addParamNamesToGroup("thermal_expansion", "Gravity treatment");
 
   return params;
@@ -95,6 +97,7 @@ WCNSFVFlowPhysicsBase::WCNSFVFlowPhysicsBase(const InputParameters & parameters)
   : NavierStokesPhysicsBase(parameters),
     _has_flow_equations(getParam<bool>("add_flow_equations")),
     _compressibility(getParam<MooseEnum>("compressibility")),
+    _solve_for_dynamic_pressure(getParam<bool>("solve_for_dynamic_pressure")),
     _porous_medium_treatment(getParam<bool>("porous_medium_treatment")),
     _porosity_name(getParam<MooseFunctorName>("porosity")),
     _flow_porosity_functor_name(_porosity_name),
@@ -132,6 +135,12 @@ WCNSFVFlowPhysicsBase::WCNSFVFlowPhysicsBase(const InputParameters & parameters)
 
   // Boussinesq parameters checks
   checkSecondParamSetOnlyIfFirstOneTrue("boussinesq_approximation", "ref_temperature");
+  checkSecondParamSetOnlyIfFirstOneSet("gravity", "boussinesq_approximation");
+
+  // Dynamic pressure parameter checks
+  if (_compressibility != "incompressible" && _solve_for_dynamic_pressure)
+    paramError("compressibility",
+               "Solving for dynamic pressure is only implemented for incompressible flow");
 
   // Boundary parameters checking
   checkVectorParamAndMultiMooseEnumLength<BoundaryName>("inlet_boundaries", "momentum_inlet_types");
@@ -237,9 +246,9 @@ WCNSFVFlowPhysicsBase::actOnAdditionalTasks()
 void
 WCNSFVFlowPhysicsBase::addFVBCs()
 {
-  addINSInletBC();
-  addINSOutletBC();
-  addINSWallsBC();
+  addInletBC();
+  addOutletBC();
+  addWallsBC();
 }
 
 void

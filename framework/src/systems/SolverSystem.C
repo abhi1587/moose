@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -11,6 +11,8 @@
 #include "SolutionInvalidity.h"
 #include "FEProblemBase.h"
 #include "TimeIntegrator.h"
+
+using namespace libMesh;
 
 SolverSystem::SolverSystem(SubProblem & subproblem,
                            FEProblemBase & fe_problem,
@@ -111,7 +113,7 @@ SolverSystem::checkInvalidSolution()
   auto & solution_invalidity = _app.solutionInvalidity();
 
   // sync all solution invalid counts to rank 0 process
-  solution_invalidity.sync();
+  solution_invalidity.syncIteration();
 
   if (solution_invalidity.hasInvalidSolution())
   {
@@ -142,7 +144,7 @@ SolverSystem::compute(const ExecFlagType type)
   }
   else if ((type == EXEC_TIMESTEP_END) || (type == EXEC_FINAL))
   {
-    if (_fe_problem.solverParams()._type == Moose::ST_LINEAR)
+    if (_fe_problem.solverParams(number())._type == Moose::ST_LINEAR)
       // We likely don't have a final residual evaluation upon which we compute the time derivatives
       // so we need to do so now
       compute_tds = true;

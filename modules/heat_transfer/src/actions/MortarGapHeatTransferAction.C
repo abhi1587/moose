@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -227,7 +227,7 @@ MortarGapHeatTransferAction::addMortarVariable()
     mooseError("The mortar thermal action can only be used with LAGRANGE finite elements");
 
   params.set<MooseEnum>("family") = Utility::enum_to_string<FEFamily>(primal_type.family);
-  params.set<MooseEnum>("order") = Utility::enum_to_string<Order>(OrderWrapper{lm_order});
+  params.set<MooseEnum>("order") = Utility::enum_to_string<Order>(libMesh::OrderWrapper{lm_order});
 
   if (_user_provided_mortar_meshes)
     params.set<std::vector<SubdomainName>>("block") = {

@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -17,6 +17,7 @@ ADRadiativeHeatFluxBC::validParams()
 {
   InputParameters params = ADRadiativeHeatFluxBCBase::validParams();
 
+  params.addRequiredParam<Real>("boundary_emissivity", "Emissivity of the boundary.");
   params.addParam<FunctionName>("view_factor", "1", "View factor function");
   params.addDeprecatedParam<PostprocessorName>(
       "scale_pp",
@@ -35,7 +36,7 @@ ADRadiativeHeatFluxBC::validParams()
 
 ADRadiativeHeatFluxBC::ADRadiativeHeatFluxBC(const InputParameters & parameters)
   : ADRadiativeHeatFluxBCBase(parameters),
-
+    _eps_boundary(getParam<Real>("boundary_emissivity")),
     _view_factor_fn(getFunction("view_factor")),
     _scale_pp(getPostprocessorValue("scale_pp")),
     _scale_fn(getFunction("scale"))

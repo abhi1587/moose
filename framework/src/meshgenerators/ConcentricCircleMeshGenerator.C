@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -980,7 +980,7 @@ ConcentricCircleMeshGenerator::generate()
     mesh->prepare_for_use();
 
   // Laplace smoothing
-  LaplaceMeshSmoother lms(*mesh);
+  libMesh::LaplaceMeshSmoother lms(*mesh);
   lms.smooth(_smoothing_max_it);
 
   mesh->prepare_for_use();

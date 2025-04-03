@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -24,7 +24,7 @@ public:
   // Splitting Constructor
   ComputeInitialConditionThread(ComputeInitialConditionThread & x, Threads::split split);
 
-  void operator()(const ConstElemRange & range);
+  void operator()(const libMesh::ConstElemRange & range);
   void join(const ComputeInitialConditionThread & /*y*/);
 
 protected:

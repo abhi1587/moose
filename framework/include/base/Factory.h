@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -253,7 +253,7 @@ Factory::createUnique(const std::string & obj_name,
 {
   auto object = createUnique(obj_name, name, parameters, tid, false);
   if (!dynamic_cast<T *>(object.get()))
-    mooseError("We expected to create an object of type '" + demangle(typeid(T).name()) +
+    mooseError("We expected to create an object of type '" + libMesh::demangle(typeid(T).name()) +
                "'.\nInstead we received a parameters object for type '" + obj_name +
                "'.\nDid you call the wrong \"add\" method in your Action?");
 

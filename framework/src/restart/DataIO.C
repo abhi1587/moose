@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -21,6 +21,8 @@
 #include "libmesh/petsc_vector.h"
 #include "libmesh/enum_solver_package.h"
 #include "libmesh/petsc_solver_exception.h"
+
+using namespace libMesh;
 
 template <>
 void
@@ -726,16 +728,13 @@ void
 dataLoad(std::istream & stream, Vec & v, void * context)
 {
   PetscInt local_size;
-  auto ierr = VecGetLocalSize(v, &local_size);
-  LIBMESH_CHKERR(ierr);
+  LibmeshPetscCallA(PETSC_COMM_WORLD, VecGetLocalSize(v, &local_size));
   PetscScalar * array;
-  ierr = VecGetArray(v, &array);
-  LIBMESH_CHKERR(ierr);
+  LibmeshPetscCallA(PETSC_COMM_WORLD, VecGetArray(v, &array));
   for (PetscInt i = 0; i < local_size; i++)
     dataLoad(stream, array[i], context);
 
-  ierr = VecRestoreArray(v, &array);
-  LIBMESH_CHKERR(ierr);
+  LibmeshPetscCallA(PETSC_COMM_WORLD, VecRestoreArray(v, &array));
 }
 
 template <>
@@ -743,14 +742,11 @@ void
 dataStore(std::ostream & stream, Vec & v, void * context)
 {
   PetscInt local_size;
-  auto ierr = VecGetLocalSize(v, &local_size);
-  LIBMESH_CHKERR(ierr);
+  LibmeshPetscCallA(PETSC_COMM_WORLD, VecGetLocalSize(v, &local_size));
   PetscScalar * array;
-  ierr = VecGetArray(v, &array);
-  LIBMESH_CHKERR(ierr);
+  LibmeshPetscCallA(PETSC_COMM_WORLD, VecGetArray(v, &array));
   for (PetscInt i = 0; i < local_size; i++)
     dataStore(stream, array[i], context);
 
-  ierr = VecRestoreArray(v, &array);
-  LIBMESH_CHKERR(ierr);
+  LibmeshPetscCallA(PETSC_COMM_WORLD, VecRestoreArray(v, &array));
 }

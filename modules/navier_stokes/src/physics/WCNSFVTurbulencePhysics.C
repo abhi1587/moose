@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -330,7 +330,7 @@ WCNSFVTurbulencePhysics::retrieveCoupledPhysics()
 }
 
 void
-WCNSFVTurbulencePhysics::addNonlinearVariables()
+WCNSFVTurbulencePhysics::addSolverVariables()
 {
   if (_turbulence_model == "mixing-length" || _turbulence_model == "none")
     return;
@@ -348,6 +348,8 @@ WCNSFVTurbulencePhysics::addNonlinearVariables()
       params.set<std::vector<Real>>("scaling") = {getParam<Real>("tke_scaling")};
       params.set<MooseEnum>("face_interp_method") = getParam<MooseEnum>("tke_face_interpolation");
       params.set<bool>("two_term_boundary_expansion") = getParam<bool>("tke_two_term_bc_expansion");
+      params.set<SolverSystemName>("solver_sys") = getSolverSystem(_tke_name);
+
       getProblem().addVariable("INSFVEnergyVariable", _tke_name, params);
     }
     else
@@ -367,6 +369,7 @@ WCNSFVTurbulencePhysics::addNonlinearVariables()
       params.set<MooseEnum>("face_interp_method") = getParam<MooseEnum>("tked_face_interpolation");
       params.set<bool>("two_term_boundary_expansion") =
           getParam<bool>("tked_two_term_bc_expansion");
+      params.set<SolverSystemName>("solver_sys") = getSolverSystem(_tked_name);
       getProblem().addVariable("INSFVEnergyVariable", _tked_name, params);
     }
     else

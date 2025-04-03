@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -18,6 +18,8 @@
 #include "PenetrationThread.h"
 #include "SubProblem.h"
 #include "MooseApp.h"
+
+using namespace libMesh;
 
 PenetrationLocator::PenetrationLocator(SubProblem & subproblem,
                                        GeometricSearchData & /*geom_search_data*/,

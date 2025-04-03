@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -13,8 +13,8 @@
 #include "MooseTypes.h"
 #include "MultiMooseEnum.h"
 #include "Assembly.h"
-#include "NonlinearSystemBase.h"
 #include "MooseVariableFE.h"
+#include "SystemBase.h"
 
 #include "libmesh/dense_vector.h"
 #include "metaphysicl/raw_type.h"
@@ -26,7 +26,6 @@ class InputParameters;
 class MooseObject;
 class SubProblem;
 class Assembly;
-class ReferenceResidualProblem;
 
 template <typename T>
 InputParameters validParams();
@@ -395,7 +394,7 @@ private:
   /// this data member to avoid constant dynamic heap allocations
   std::vector<Real> _absolute_residuals;
 
-  friend void NonlinearSystemBase::constraintJacobians(bool);
+  friend class NonlinearSystemBase;
 };
 
 #define usingTaggingInterfaceMembers                                                               \

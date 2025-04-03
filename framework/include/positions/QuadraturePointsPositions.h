@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -30,7 +30,7 @@ public:
   MooseMesh & _mesh;
 
   /// Type of the quadrature
-  QuadratureType _q_type;
+  libMesh::QuadratureType _q_type;
   /// Order of the quadrature
-  Order _q_order;
+  libMesh::Order _q_order;
 };

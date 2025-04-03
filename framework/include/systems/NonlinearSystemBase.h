@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -67,7 +67,7 @@ class DiagonalMatrix;
 class NonlinearSystemBase : public SolverSystem, public PerfGraphInterface
 {
 public:
-  NonlinearSystemBase(FEProblemBase & problem, System & sys, const std::string & name);
+  NonlinearSystemBase(FEProblemBase & problem, libMesh::System & sys, const std::string & name);
   virtual ~NonlinearSystemBase();
 
   virtual void preInit() override;
@@ -81,7 +81,7 @@ public:
 
   virtual void solve() override = 0;
 
-  virtual NonlinearSolver<Number> * nonlinearSolver() = 0;
+  virtual libMesh::NonlinearSolver<Number> * nonlinearSolver() = 0;
 
   virtual SNES getSNES() = 0;
 
@@ -108,12 +108,6 @@ public:
     return _use_finite_differenced_preconditioner;
   }
   bool haveFieldSplitPreconditioner() const { return _use_field_split_preconditioner; }
-
-  /**
-   * Returns the convergence state
-   * @return true if converged, otherwise false
-   */
-  virtual bool converged() = 0;
 
   /**
    * Adds a kernel
@@ -354,12 +348,12 @@ public:
   /**
    * Associate jacobian to systemMatrixTag, and then form a matrix for all the tags
    */
-  void computeJacobian(SparseMatrix<Number> & jacobian, const std::set<TagID> & tags);
+  void computeJacobian(libMesh::SparseMatrix<Number> & jacobian, const std::set<TagID> & tags);
 
   /**
    * Take all tags in the system, and form a matrix for all tags in the system
    */
-  void computeJacobian(SparseMatrix<Number> & jacobian);
+  void computeJacobian(libMesh::SparseMatrix<Number> & jacobian);
 
   /**
    * Computes several Jacobian blocks simultaneously, summing their contributions into smaller
@@ -441,7 +435,7 @@ public:
 
   virtual NumericVector<Number> & RHS() = 0;
 
-  virtual void augmentSparsity(SparsityPattern::Graph & sparsity,
+  virtual void augmentSparsity(libMesh::SparsityPattern::Graph & sparsity,
                                std::vector<dof_id_type> & n_nz,
                                std::vector<dof_id_type> & n_oz) override;
 
@@ -500,7 +494,7 @@ public:
    * Attach a customized preconditioner that requires physics knowledge.
    * Generic preconditioners should be implemented in PETSc, instead.
    */
-  virtual void attachPreconditioner(Preconditioner<Number> * preconditioner) = 0;
+  virtual void attachPreconditioner(libMesh::Preconditioner<Number> * preconditioner) = 0;
 
   /**
    * Setup damping stuff (called before we actually start)
@@ -524,7 +518,8 @@ public:
   ///@{
   /// System Integrity Checks
   void checkKernelCoverage(const std::set<SubdomainID> & mesh_subdomains) const;
-  bool containsTimeKernel();
+  virtual bool containsTimeKernel() override;
+  virtual std::vector<std::string> timeKernelVariableNames() override;
   ///@}
 
   /**
@@ -602,6 +597,14 @@ public:
   }
   MooseObjectTagWarehouse<DiracKernelBase> & getDiracKernelWarehouse() { return _dirac_kernels; }
   MooseObjectTagWarehouse<IntegratedBCBase> & getIntegratedBCWarehouse() { return _integrated_bcs; }
+  const MooseObjectTagWarehouse<ScalarKernelBase> & getScalarKernelWarehouse() const
+  {
+    return _scalar_kernels;
+  }
+  const MooseObjectTagWarehouse<NodalKernelBase> & getNodalKernelWarehouse() const
+  {
+    return _nodal_kernels;
+  }
   const MooseObjectWarehouse<ElementDamper> & getElementDamperWarehouse() const
   {
     return _element_dampers;
@@ -637,8 +640,8 @@ public:
    */
   bool hasDiagSaveIn() const { return _has_diag_save_in || _has_nodalbc_diag_save_in; }
 
-  virtual System & system() override { return _sys; }
-  virtual const System & system() const override { return _sys; }
+  virtual libMesh::System & system() override { return _sys; }
+  virtual const libMesh::System & system() const override { return _sys; }
 
   virtual void setSolutionUDotOld(const NumericVector<Number> & u_dot_old);
 
@@ -689,7 +692,7 @@ public:
     _off_diagonals_in_auto_scaling = off_diagonals_in_auto_scaling;
   }
 
-  System & _sys;
+  libMesh::System & _sys;
   // FIXME: make these protected and create getters/setters
   Real _last_nl_rnorm;
   std::vector<unsigned int> _current_l_its;
@@ -980,7 +983,7 @@ protected:
   bool _off_diagonals_in_auto_scaling;
 
   /// A diagonal matrix used for computing scaling
-  std::unique_ptr<DiagonalMatrix<Number>> _scaling_matrix;
+  std::unique_ptr<libMesh::DiagonalMatrix<Number>> _scaling_matrix;
 
 private:
   /**

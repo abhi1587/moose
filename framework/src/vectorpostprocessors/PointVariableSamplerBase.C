@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -48,7 +48,10 @@ PointVariableSamplerBase::PointVariableSamplerBase(const InputParameters & param
   std::vector<std::string> var_names(_coupled_moose_vars.size());
 
   for (unsigned int i = 0; i < _coupled_moose_vars.size(); i++)
+  {
     var_names[i] = _coupled_moose_vars[i]->name();
+    SamplerBase::checkForStandardFieldVariableType(_coupled_moose_vars[i]);
+  }
 
   // Initialize the data structures in SamplerBase
   SamplerBase::setupVariables(var_names);

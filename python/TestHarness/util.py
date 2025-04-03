@@ -1,5 +1,5 @@
 #* This file is part of the MOOSE framework
-#* https://www.mooseframework.org
+#* https://mooseframework.inl.gov
 #*
 #* All rights reserved, see COPYRIGHT for full restrictions
 #* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -369,12 +369,6 @@ def getPlatforms():
     raw_uname = platform.uname()
     if raw_uname[0].upper() == 'DARWIN':
         platforms.add('DARWIN')
-        if re.match("12\.", raw_uname[2]):
-            platforms.add('ML')
-        if re.match("13\.", raw_uname[2]):
-            platforms.add("MAVERICKS")
-        if re.match("14\.", raw_uname[2]):
-            platforms.add("YOSEMITE")
     else:
         platforms.add(raw_uname[0].upper())
     return platforms
@@ -429,11 +423,11 @@ def getCompilers(libmesh_dir):
     else:
         raw_compiler = mpicxx_cmd
 
-    if re.match('\S*icpc\s', raw_compiler) != None:
+    if re.match(r'\S*icpc\s', raw_compiler) != None:
         compilers.add("INTEL")
-    elif re.match('\S*clang\+\+\s', raw_compiler) != None:
+    elif re.match(r'\S*clang\+\+\s', raw_compiler) != None:
         compilers.add("CLANG")
-    elif re.match('\S*[cg]\+\+\s', raw_compiler) != None:
+    elif re.match(r'\S*[cg]\+\+\s', raw_compiler) != None:
         compilers.add("GCC")
 
     return compilers
@@ -732,7 +726,10 @@ def checkInstalled(executable, app_name):
     Read resource file and determine if binary was relocated
     """
     option_set = set(['ALL'])
-    resource_content = readResourceFile(executable, app_name)
+    if executable:
+        resource_content = readResourceFile(executable, app_name)
+    else:
+        resource_content = {}
     option_set.add(resource_content.get('installation_type', 'ALL').upper())
     return option_set
 

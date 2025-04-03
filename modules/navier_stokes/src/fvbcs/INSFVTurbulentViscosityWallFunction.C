@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -52,7 +52,8 @@ INSFVTurbulentViscosityWallFunction::INSFVTurbulentViscosityWallFunction(
 }
 
 ADReal
-INSFVTurbulentViscosityWallFunction::boundaryValue(const FaceInfo & fi) const
+INSFVTurbulentViscosityWallFunction::boundaryValue(const FaceInfo & fi,
+                                                   const Moose::StateArg & /* state */) const
 {
   const Real wall_dist = std::abs((fi.elemCentroid() - fi.faceCentroid()) * fi.normal());
   const Elem & _current_elem = fi.elem();

@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -35,6 +35,7 @@
 #include "Parser.h"
 #include "ElementH1Error.h"
 #include "Function.h"
+#include "Convergence.h"
 #include "NonlinearSystem.h"
 #include "LinearSystem.h"
 #include "SolverSystem.h"
@@ -126,6 +127,8 @@
 #include "libmesh/petsc_solver_exception.h"
 
 #include "metaphysicl/dualnumber.h"
+
+using namespace libMesh;
 
 // Anonymous namespace for helper function
 namespace
@@ -286,6 +289,12 @@ FEProblemBase::validParams()
       "nonlinear system the extra tag vectors should be added for");
 
   params.addParam<std::vector<std::vector<TagName>>>(
+      "not_zeroed_tag_vectors",
+      {},
+      "Extra vector tags which the sytem will not zero when other vector tags are zeroed. "
+      "The outer index is for which nonlinear system the extra tag vectors should be added for");
+
+  params.addParam<std::vector<std::vector<TagName>>>(
       "extra_tag_matrices",
       {},
       "Extra matrices to add to the system that can be filled "
@@ -358,8 +367,9 @@ FEProblemBase::validParams()
   params.addParamNamesToGroup(
       "null_space_dimension transpose_null_space_dimension near_null_space_dimension",
       "Null space removal");
-  params.addParamNamesToGroup("extra_tag_vectors extra_tag_matrices extra_tag_solutions",
-                              "Tagging");
+  params.addParamNamesToGroup(
+      "extra_tag_vectors extra_tag_matrices extra_tag_solutions not_zeroed_tag_vectors",
+      "Contribution to tagged field data");
   params.addParamNamesToGroup(
       "allow_invalid_solution show_invalid_solution_console immediately_print_invalid_solution",
       "Solution validity control");
@@ -381,6 +391,8 @@ FEProblemBase::FEProblemBase(const InputParameters & parameters)
     _t_step(declareRecoverableData<int>("t_step")),
     _dt(declareRestartableData<Real>("dt")),
     _dt_old(declareRestartableData<Real>("dt_old")),
+    _set_nonlinear_convergence_names(false),
+    _need_to_add_default_nonlinear_convergence(false),
     _linear_sys_names(getParam<std::vector<LinearSystemName>>("linear_sys_names")),
     _num_linear_sys(_linear_sys_names.size()),
     _linear_systems(_num_linear_sys, nullptr),
@@ -459,6 +471,7 @@ FEProblemBase::FEProblemBase(const InputParameters & parameters)
     _is_petsc_options_inserted(false),
     _line_search(nullptr),
     _using_ad_mat_props(false),
+    _current_ic_state(0),
     _error_on_jacobian_nonzero_reallocation(
         isParamValid("error_on_jacobian_nonzero_reallocation")
             ? getParam<bool>("error_on_jacobian_nonzero_reallocation")
@@ -489,6 +502,10 @@ FEProblemBase::FEProblemBase(const InputParameters & parameters)
   //  We will toggle this to false when doing residual evaluations
   ADReal::do_derivatives = true;
 
+  _solver_params.reserve(_num_nl_sys + _num_linear_sys);
+  // Default constructor fine for nonlinear because it will be populated later by framework
+  // executioner/solve object parameters
+  _solver_params.resize(_num_nl_sys);
   for (const auto i : index_range(_nl_sys_names))
   {
     const auto & name = _nl_sys_names[i];
@@ -503,6 +520,8 @@ FEProblemBase::FEProblemBase(const InputParameters & parameters)
     _linear_sys_name_to_num[name] = i;
     _solver_sys_name_to_num[name] = i + _num_nl_sys;
     _solver_sys_names.push_back(name);
+    // Unlike for nonlinear these are basically dummy parameters
+    _solver_params.push_back(makeLinearSolverParams());
   }
 
   _nonlocal_cm.resize(_nl_sys_names.size());
@@ -576,10 +595,7 @@ FEProblemBase::FEProblemBase(const InputParameters & parameters)
 #if !PETSC_RELEASE_LESS_THAN(3, 12, 0)
   // Main app should hold the default database to handle system petsc options
   if (!_app.isUltimateMaster())
-  {
-    auto ierr = PetscOptionsCreate(&_petsc_option_data_base);
-    LIBMESH_CHKERR(ierr);
-  }
+    LibmeshPetscCall(PetscOptionsCreate(&_petsc_option_data_base));
 #endif
 
   if (!_solve)
@@ -609,7 +625,16 @@ FEProblemBase::createTagVectors()
     for (auto & vector : vectors[nl_sys_num])
     {
       auto tag = addVectorTag(vector);
+      _nl[nl_sys_num]->addVector(tag, false, libMesh::GHOSTED);
+    }
+
+  auto & not_zeroed_vectors = getParam<std::vector<std::vector<TagName>>>("not_zeroed_tag_vectors");
+  for (const auto nl_sys_num : index_range(not_zeroed_vectors))
+    for (auto & vector : not_zeroed_vectors[nl_sys_num])
+    {
+      auto tag = addVectorTag(vector);
       _nl[nl_sys_num]->addVector(tag, false, GHOSTED);
+      addNotZeroedVectorTag(tag);
     }
 
   // add matrices and their tags
@@ -629,8 +654,8 @@ FEProblemBase::createTagSolutions()
   {
     auto tag = addVectorTag(vector, Moose::VECTOR_TAG_SOLUTION);
     for (auto & sys : _solver_systems)
-      sys->addVector(tag, false, GHOSTED);
-    _aux->addVector(tag, false, GHOSTED);
+      sys->addVector(tag, false, libMesh::GHOSTED);
+    _aux->addVector(tag, false, libMesh::GHOSTED);
   }
 
   if (_previous_nl_solution_required)
@@ -691,7 +716,7 @@ FEProblemBase::initNullSpaceVectors(const InputParameters & parameters,
     // do not project, since this will be recomputed, but make it ghosted, since the near nullspace
     // builder might march over all nodes
     for (auto & nl : nls)
-      nl->addVector("NullSpace" + oss.str(), false, GHOSTED);
+      nl->addVector("NullSpace" + oss.str(), false, libMesh::GHOSTED);
   }
   _subspace_dim["NullSpace"] = dimNullSpace;
   for (unsigned int i = 0; i < dimTransposeNullSpace; ++i)
@@ -701,7 +726,7 @@ FEProblemBase::initNullSpaceVectors(const InputParameters & parameters,
     // do not project, since this will be recomputed, but make it ghosted, since the near nullspace
     // builder might march over all nodes
     for (auto & nl : nls)
-      nl->addVector("TransposeNullSpace" + oss.str(), false, GHOSTED);
+      nl->addVector("TransposeNullSpace" + oss.str(), false, libMesh::GHOSTED);
   }
   _subspace_dim["TransposeNullSpace"] = dimTransposeNullSpace;
   for (unsigned int i = 0; i < dimNearNullSpace; ++i)
@@ -711,7 +736,7 @@ FEProblemBase::initNullSpaceVectors(const InputParameters & parameters,
     // do not project, since this will be recomputed, but make it ghosted, since the near-nullspace
     // builder might march over all semilocal nodes
     for (auto & nl : nls)
-      nl->addVector("NearNullSpace" + oss.str(), false, GHOSTED);
+      nl->addVector("NearNullSpace" + oss.str(), false, libMesh::GHOSTED);
   }
   _subspace_dim["NearNullSpace"] = dimNearNullSpace;
 }
@@ -919,7 +944,7 @@ FEProblemBase::initialSetup()
   }
   else
   {
-    ExodusII_IO * reader = _app.getExReaderForRestart();
+    libMesh::ExodusII_IO * reader = _app.getExReaderForRestart();
 
     if (reader)
     {
@@ -974,6 +999,14 @@ FEProblemBase::initialSetup()
 
   unsigned int n_threads = libMesh::n_threads();
 
+  // Convergence initial setup
+  {
+    TIME_SECTION("convergenceInitialSetup", 5, "Initializing Convergence objects");
+
+    for (THREAD_ID tid = 0; tid < n_threads; tid++)
+      _convergences.initialSetup(tid);
+  }
+
   // UserObject initialSetup
   std::set<std::string> depend_objects_ic = _ics.getDependObjects();
   std::set<std::string> depend_objects_aux = _aux->getDependObjects();
@@ -985,8 +1018,13 @@ FEProblemBase::initialSetup()
   groupUserObjects(
       theWarehouse(), getAuxiliarySystem(), _app.getExecuteOnEnum(), userobjs, depend_objects_ic);
 
+  std::map<int, std::vector<UserObject *>> group_userobjs;
   for (auto obj : userobjs)
-    obj->initialSetup();
+    group_userobjs[obj->getParam<int>("execution_order_group")].push_back(obj);
+
+  for (auto & [group, objs] : group_userobjs)
+    for (auto obj : objs)
+      obj->initialSetup();
 
   // check if jacobian calculation is done in userobject
   for (THREAD_ID tid = 0; tid < n_threads; ++tid)
@@ -1022,7 +1060,7 @@ FEProblemBase::initialSetup()
     computeUserObjects(EXEC_INITIAL, Moose::PRE_IC);
 
     {
-      TIME_SECTION("ICiniitalSetup", 5, "Setting Up Initial Conditions");
+      TIME_SECTION("ICinitialSetup", 5, "Setting Up Initial Conditions");
 
       for (THREAD_ID tid = 0; tid < n_threads; tid++)
         _ics.initialSetup(tid);
@@ -1103,6 +1141,59 @@ FEProblemBase::initialSetup()
   {
     // During initial setup the solution is copied to the older solution states (old, older, etc)
     copySolutionsBackwards();
+
+    // Check if there are old state initial conditions
+    auto ics = _ics.getActiveObjects();
+    auto fv_ics = _fv_ics.getActiveObjects();
+    auto scalar_ics = _scalar_ics.getActiveObjects();
+    unsigned short ic_state_max = 0;
+
+    auto findMax = [&ic_state_max](const auto & obj_list)
+    {
+      for (auto ic : obj_list.getActiveObjects())
+        ic_state_max = std::max(ic_state_max, ic->getState());
+    };
+    findMax(_ics);
+    findMax(_fv_ics);
+    findMax(_scalar_ics);
+
+    // if there are old state ICs, compute them and write to old states accordingly
+    if (ic_state_max > 0)
+    {
+      // state 0 copy (we'll overwrite current state when evaluating ICs and need to restore it once
+      // we're done with the old/older state ICs)
+      std::vector<std::unique_ptr<NumericVector<Real>>> state0_sys_buffers(_solver_systems.size());
+      std::unique_ptr<NumericVector<Real>> state0_aux_buffer;
+
+      // save state 0
+      for (const auto i : index_range(_solver_systems))
+        state0_sys_buffers[i] = _solver_systems[i]->solutionState(0).clone();
+
+      state0_aux_buffer = _aux->solutionState(0).clone();
+
+      // compute old state ICs
+      for (_current_ic_state = 1; _current_ic_state <= ic_state_max; _current_ic_state++)
+      {
+        projectSolution();
+
+        for (auto & sys : _solver_systems)
+          sys->solutionState(_current_ic_state) = sys->solutionState(0);
+
+        _aux->solutionState(_current_ic_state) = _aux->solutionState(0);
+      }
+      _current_ic_state = 0;
+
+      // recover state 0
+      for (const auto i : index_range(_solver_systems))
+      {
+        _solver_systems[i]->solutionState(0) = *state0_sys_buffers[i];
+        _solver_systems[i]->solutionState(0).close();
+        _solver_systems[i]->update();
+      }
+      _aux->solutionState(0) = *state0_aux_buffer;
+      _aux->solutionState(0).close();
+      _aux->update();
+    }
   }
 
   if (!_app.isRecovering())
@@ -1358,10 +1449,10 @@ FEProblemBase::timestepSetup()
 
   if (_t_step > 1 && _num_grid_steps)
   {
-    MeshRefinement mesh_refinement(_mesh);
-    std::unique_ptr<MeshRefinement> displaced_mesh_refinement(nullptr);
+    libMesh::MeshRefinement mesh_refinement(_mesh);
+    std::unique_ptr<libMesh::MeshRefinement> displaced_mesh_refinement(nullptr);
     if (_displaced_mesh)
-      displaced_mesh_refinement = std::make_unique<MeshRefinement>(*_displaced_mesh);
+      displaced_mesh_refinement = std::make_unique<libMesh::MeshRefinement>(*_displaced_mesh);
 
     for (MooseIndex(_num_grid_steps) i = 0; i < _num_grid_steps; ++i)
     {
@@ -2227,7 +2318,7 @@ FEProblemBase::reinitElemNeighborAndLowerD(const Elem * elem,
   reinitNeighbor(elem, side, tid);
 
   const Elem * lower_d_elem = _mesh.getLowerDElem(elem, side);
-  if (lower_d_elem && lower_d_elem->subdomain_id() == Moose::INTERNAL_SIDE_LOWERD_ID)
+  if (lower_d_elem && _mesh.interiorLowerDBlocks().count(lower_d_elem->subdomain_id()) > 0)
     reinitLowerDElem(lower_d_elem, tid);
   else
   {
@@ -2236,12 +2327,12 @@ FEProblemBase::reinitElemNeighborAndLowerD(const Elem * elem,
     auto & neighbor_side = _assembly[tid][0]->neighborSide();
     const Elem * lower_d_elem_neighbor = _mesh.getLowerDElem(neighbor, neighbor_side);
     if (lower_d_elem_neighbor &&
-        lower_d_elem_neighbor->subdomain_id() == Moose::INTERNAL_SIDE_LOWERD_ID)
+        _mesh.interiorLowerDBlocks().count(lower_d_elem_neighbor->subdomain_id()) > 0)
     {
       auto qps = _assembly[tid][0]->qPointsFaceNeighbor().stdVector();
       std::vector<Point> reference_points;
-      FEInterface::inverse_map(
-          lower_d_elem_neighbor->dim(), FEType(), lower_d_elem_neighbor, qps, reference_points);
+      FEMap::inverse_map(
+          lower_d_elem_neighbor->dim(), lower_d_elem_neighbor, qps, reference_points);
       reinitLowerDElem(lower_d_elem_neighbor, tid, &reference_points);
     }
   }
@@ -2339,7 +2430,6 @@ void
 FEProblemBase::subdomainSetup(SubdomainID subdomain, const THREAD_ID tid)
 {
   _all_materials.subdomainSetup(subdomain, tid);
-
   // Call the subdomain methods of the output system, these are not threaded so only call it once
   if (tid == 0)
     _app.getOutputWarehouse().subdomainSetup();
@@ -2381,6 +2471,32 @@ FEProblemBase::addFunction(const std::string & type,
     else
       mooseError("Unrecognized function functor type");
   }
+}
+
+void
+FEProblemBase::addConvergence(const std::string & type,
+                              const std::string & name,
+                              InputParameters & parameters)
+{
+  parallel_object_only();
+
+  for (THREAD_ID tid = 0; tid < libMesh::n_threads(); tid++)
+  {
+    std::shared_ptr<Convergence> conv = _factory.create<Convergence>(type, name, parameters, tid);
+    _convergences.addObject(conv, tid);
+  }
+}
+
+void
+FEProblemBase::addDefaultNonlinearConvergence(const InputParameters & params_to_apply)
+{
+  const std::string class_name = "DefaultNonlinearConvergence";
+  InputParameters params = _factory.getValidParams(class_name);
+  params.applyParameters(params_to_apply);
+  params.applyParameters(parameters());
+  params.set<bool>("added_as_default") = true;
+  for (const auto & conv_name : getNonlinearConvergenceNames())
+    addConvergence(class_name, conv_name, params);
 }
 
 bool
@@ -2432,6 +2548,28 @@ FEProblemBase::getFunction(const std::string & name, const THREAD_ID tid)
     mooseError("No function named ", name, " of appropriate type");
 
   return *ret;
+}
+
+bool
+FEProblemBase::hasConvergence(const std::string & name, const THREAD_ID tid) const
+{
+  return _convergences.hasActiveObject(name, tid);
+}
+
+Convergence &
+FEProblemBase::getConvergence(const std::string & name, const THREAD_ID tid) const
+{
+  auto * const ret = dynamic_cast<Convergence *>(_convergences.getActiveObject(name, tid).get());
+  if (!ret)
+    mooseError("The Convergence object '", name, "' does not exist.");
+
+  return *ret;
+}
+
+const std::vector<std::shared_ptr<Convergence>> &
+FEProblemBase::getConvergenceObjects(const THREAD_ID tid) const
+{
+  return _convergences.getActiveObjects(tid);
 }
 
 void
@@ -2649,8 +2787,9 @@ FEProblemBase::addVariable(const std::string & var_type,
 {
   parallel_object_only();
 
-  auto fe_type = FEType(Utility::string_to_enum<Order>(params.get<MooseEnum>("order")),
-                        Utility::string_to_enum<FEFamily>(params.get<MooseEnum>("family")));
+  const auto order = Utility::string_to_enum<Order>(params.get<MooseEnum>("order"));
+  const auto family = Utility::string_to_enum<FEFamily>(params.get<MooseEnum>("family"));
+  const auto fe_type = FEType(order, family);
 
   const auto active_subdomains_vector =
       _mesh.getSubdomainIDs(params.get<std::vector<SubdomainName>>("block"));
@@ -2672,6 +2811,8 @@ FEProblemBase::addVariable(const std::string & var_type,
     _displaced_problem->addVariable(var_type, var_name, params, solver_system_number);
 
   _solver_var_to_sys_num[var_name] = solver_system_number;
+
+  markFamilyPRefinement(params);
 }
 
 std::pair<bool, unsigned int>
@@ -2930,8 +3071,9 @@ FEProblemBase::addAuxVariable(const std::string & var_type,
 {
   parallel_object_only();
 
-  auto fe_type = FEType(Utility::string_to_enum<Order>(params.get<MooseEnum>("order")),
-                        Utility::string_to_enum<FEFamily>(params.get<MooseEnum>("family")));
+  const auto order = Utility::string_to_enum<Order>(params.get<MooseEnum>("order"));
+  const auto family = Utility::string_to_enum<FEFamily>(params.get<MooseEnum>("family"));
+  const auto fe_type = FEType(order, family);
 
   const auto active_subdomains_vector =
       _mesh.getSubdomainIDs(params.get<std::vector<SubdomainName>>("block"));
@@ -2949,6 +3091,8 @@ FEProblemBase::addAuxVariable(const std::string & var_type,
   if (_displaced_problem)
     // MooseObjects need to be unique so change the name here
     _displaced_problem->addAuxVariable(var_type, var_name, params);
+
+  markFamilyPRefinement(params);
 }
 
 void
@@ -2987,6 +3131,8 @@ FEProblemBase::addAuxVariable(const std::string & var_name,
   _aux->addVariable(var_type, var_name, params);
   if (_displaced_problem)
     _displaced_problem->addAuxVariable("MooseVariable", var_name, params);
+
+  markFamilyPRefinement(params);
 }
 
 void
@@ -3017,6 +3163,8 @@ FEProblemBase::addAuxArrayVariable(const std::string & var_name,
   _aux->addVariable("ArrayMooseVariable", var_name, params);
   if (_displaced_problem)
     _displaced_problem->addAuxVariable("ArrayMooseVariable", var_name, params);
+
+  markFamilyPRefinement(params);
 }
 
 void
@@ -4006,17 +4154,26 @@ FEProblemBase::addObjectParamsHelper(InputParameters & parameters,
                                      const std::string & object_name,
                                      const std::string & var_param_name)
 {
-  const auto solver_sys_num =
-      parameters.isParamValid(var_param_name) &&
-              determineSolverSystem(parameters.varName(var_param_name, object_name)).first
-          ? determineSolverSystem(parameters.varName(var_param_name, object_name)).second
-          : (unsigned int)0;
+  // Due to objects like SolutionUserObject which manipulate libmesh objects
+  // and variables directly at the back end, we need a default option here
+  // which is going to be the pointer to the first solver system within this
+  // problem
+  unsigned int sys_num = 0;
+  if (parameters.isParamValid(var_param_name))
+  {
+    const auto variable_name = parameters.varName(var_param_name, object_name);
+    if (this->hasVariable(variable_name) || this->hasScalarVariable(variable_name))
+      sys_num = getSystem(parameters.varName(var_param_name, object_name)).number();
+  }
 
   if (_displaced_problem && parameters.have_parameter<bool>("use_displaced_mesh") &&
       parameters.get<bool>("use_displaced_mesh"))
   {
     parameters.set<SubProblem *>("_subproblem") = _displaced_problem.get();
-    parameters.set<SystemBase *>("_sys") = &_displaced_problem->solverSys(solver_sys_num);
+    if (sys_num == _aux->number())
+      parameters.set<SystemBase *>("_sys") = &_displaced_problem->systemBaseAuxiliary();
+    else
+      parameters.set<SystemBase *>("_sys") = &_displaced_problem->solverSys(sys_num);
   }
   else
   {
@@ -4028,7 +4185,11 @@ FEProblemBase::addObjectParamsHelper(InputParameters & parameters,
       parameters.set<bool>("use_displaced_mesh") = false;
 
     parameters.set<SubProblem *>("_subproblem") = this;
-    parameters.set<SystemBase *>("_sys") = _solver_systems[solver_sys_num].get();
+
+    if (sys_num == _aux->number())
+      parameters.set<SystemBase *>("_sys") = _aux.get();
+    else
+      parameters.set<SystemBase *>("_sys") = _solver_systems[sys_num].get();
   }
 }
 
@@ -4129,20 +4290,19 @@ FEProblemBase::addUserObject(const std::string & user_object_name,
       break;
   }
 
-  // Add as a Functor if it is one
-  // At the timing of adding this, this is only Postprocessors... but technically it
-  // should enable any UO that is a Real Functor to be used as one
-  // The ternary operator used in getting the functor is there because some UOs
-  // are threaded and some are not. When a UO is not threaded, we need to add
-  // the functor from thread 0 as the registered functor for all threads
+  // Add as a Functor if it is one. We usually need to add the user object from thread 0 as the
+  // registered functor for all threads because when user objects are thread joined, generally only
+  // the primary thread copy ends up with all the data
   for (const auto tid : make_range(libMesh::n_threads()))
-    if (const auto functor =
-            dynamic_cast<Moose::FunctorBase<Real> *>(uos[uos.size() == 1 ? 0 : tid].get()))
+  {
+    const decltype(uos)::size_type uo_index = uos.front()->needThreadedCopy() ? tid : 0;
+    if (const auto functor = dynamic_cast<Moose::FunctorBase<Real> *>(uos[uo_index].get()))
     {
       this->addFunctor(name, *functor, tid);
       if (_displaced_problem)
         _displaced_problem->addFunctor(name, *functor, tid);
     }
+  }
 
   return uos;
 }
@@ -5458,6 +5618,16 @@ FEProblemBase::hasVariable(const std::string & var_name) const
   return false;
 }
 
+bool
+FEProblemBase::hasSolverVariable(const std::string & var_name) const
+{
+  for (auto & sys : _solver_systems)
+    if (sys->hasVariable(var_name))
+      return true;
+
+  return false;
+}
+
 const MooseVariableFieldBase &
 FEProblemBase::getVariable(const THREAD_ID tid,
                            const std::string & var_name,
@@ -5546,7 +5716,7 @@ FEProblemBase::getSystem(const std::string & var_name)
   const auto [var_in_sys, sys_num] = determineSolverSystem(var_name);
   if (var_in_sys)
     return _solver_systems[sys_num]->system();
-  else if (_aux->hasVariable(var_name))
+  else if (_aux->hasVariable(var_name) || _aux->hasScalarVariable(var_name))
     return _aux->system();
   else
     mooseError("Unable to find a system containing the variable " + var_name);
@@ -5995,7 +6165,7 @@ FEProblemBase::init()
     _aux->dofMap().attach_extra_send_list_function(&extraSendList, _aux.get());
 
     if (!_skip_nl_system_check && _solve && n_vars == 0)
-      mooseError("No variables specified in the FEProblemBase '", name(), "'.");
+      mooseError("No variables specified in nonlinear system '", nl->name(), "'.");
   }
 
   ghostGhostedBoundaries(); // We do this again right here in case new boundaries have been added
@@ -6009,9 +6179,16 @@ FEProblemBase::init()
   if (_displaced_problem)
     _displaced_mesh->meshChanged();
 
+  if (_mesh.doingPRefinement())
+  {
+    preparePRefinement();
+    if (_displaced_problem)
+      _displaced_problem->preparePRefinement();
+  }
+
   // do not assemble system matrix for JFNK solve
   for (auto & nl : _nl)
-    if (solverParams()._type == Moose::ST_JFNK)
+    if (solverParams(nl->number())._type == Moose::ST_JFNK)
       nl->turnOffJacobian();
 
   for (auto & sys : _solver_systems)
@@ -6092,9 +6269,32 @@ FEProblemBase::solverSysNum(const SolverSystemName & solver_sys_name) const
   std::istringstream ss(solver_sys_name);
   unsigned int solver_sys_num;
   if (!(ss >> solver_sys_num) || !ss.eof())
-    solver_sys_num = libmesh_map_find(_solver_sys_name_to_num, solver_sys_name);
+  {
+    const auto & search = _solver_sys_name_to_num.find(solver_sys_name);
+    if (search == _solver_sys_name_to_num.end())
+      mooseError("The solver system number was requested for system '" + solver_sys_name,
+                 "' but this system does not exist in the Problem. Systems can be added to the "
+                 "problem using the 'nl_sys_names' parameter.\nSystems in the Problem: " +
+                     Moose::stringify(_solver_sys_names));
+    solver_sys_num = search->second;
+  }
 
   return solver_sys_num;
+}
+
+unsigned int
+FEProblemBase::systemNumForVariable(const VariableName & variable_name) const
+{
+  for (const auto & solver_sys : _solver_systems)
+    if (solver_sys->hasVariable(variable_name))
+      return solver_sys->number();
+  mooseAssert(_aux, "Should have an auxiliary system");
+  if (_aux->hasVariable(variable_name))
+    return _aux->number();
+
+  mooseError("Variable '",
+             variable_name,
+             "' was not found in any solver (nonlinear/linear) or auxiliary system");
 }
 
 void
@@ -6110,6 +6310,10 @@ FEProblemBase::solve(const unsigned int nl_sys_num)
   if (_displaced_problem)
     _displaced_problem->clearAllDofIndices();
 
+  // Setup the output system for printing linear/nonlinear iteration information and some solver
+  // settings, including setting matrix prefixes. This must occur before petscSetOptions
+  initPetscOutputAndSomeSolverSettings();
+
 #if PETSC_RELEASE_LESS_THAN(3, 12, 0)
   Moose::PetscSupport::petscSetOptions(
       _petsc_options, _solver_params); // Make sure the PETSc options are setup for this app
@@ -6117,13 +6321,11 @@ FEProblemBase::solve(const unsigned int nl_sys_num)
   // Now this database will be the default
   // Each app should have only one database
   if (!_app.isUltimateMaster())
-  {
-    auto ierr = PetscOptionsPush(_petsc_option_data_base);
-    LIBMESH_CHKERR(ierr);
-  }
+    LibmeshPetscCall(PetscOptionsPush(_petsc_option_data_base));
   // We did not add PETSc options to database yet
   if (!_is_petsc_options_inserted)
   {
+    // Insert options for all systems all at once
     Moose::PetscSupport::petscSetOptions(_petsc_options, _solver_params, this);
     _is_petsc_options_inserted = true;
   }
@@ -6133,10 +6335,6 @@ FEProblemBase::solve(const unsigned int nl_sys_num)
   // We need to setup DM every "solve()" because libMesh destroy SNES after solve()
   // Do not worry, DM setup is very cheap
   _current_nl_sys->setupDM();
-
-  // Setup the output system for printing linear/nonlinear iteration information and some solver
-  // settings
-  initPetscOutputAndSomeSolverSettings();
 
   possiblyRebuildGeomSearchPatches();
 
@@ -6157,10 +6355,7 @@ FEProblemBase::solve(const unsigned int nl_sys_num)
 
 #if !PETSC_RELEASE_LESS_THAN(3, 12, 0)
   if (!_app.isUltimateMaster())
-  {
-    auto ierr = PetscOptionsPop();
-    LIBMESH_CHKERR(ierr);
-  }
+    LibmeshPetscCall(PetscOptionsPop());
 #endif
 }
 
@@ -6207,10 +6402,10 @@ FEProblemBase::checkExceptionAndStopSolve(bool print_message)
       // SNESSetFunctionDomainError() or directly inserting NaNs in the
       // residual vector to let PETSc >= 3.6 return DIVERGED_NANORINF.
       if (_current_nl_sys)
-        _current_nl_sys->stopSolve(_current_execute_on_flag);
+        _current_nl_sys->stopSolve(_current_execute_on_flag, _fe_vector_tags);
 
       if (_current_linear_sys)
-        _current_nl_sys->stopSolve(_current_execute_on_flag);
+        _current_linear_sys->stopSolve(_current_execute_on_flag, _fe_vector_tags);
 
       // and close Aux system (we MUST do this here; see #11525)
       _aux->solution().close();
@@ -6242,8 +6437,9 @@ FEProblemBase::resetState()
   ADReal::do_derivatives = true;
   _current_execute_on_flag = EXEC_NONE;
 
+  // Clear the VectorTags and MatrixTags
   clearCurrentResidualVectorTags();
-  clearCurrentJacobianVectorTags();
+  clearCurrentJacobianMatrixTags();
 
   _safe_access_tagged_vectors = true;
   _safe_access_tagged_matrices = true;
@@ -6268,22 +6464,17 @@ FEProblemBase::solveLinearSystem(const unsigned int linear_sys_num,
   setCurrentLinearSystem(linear_sys_num);
 
   const Moose::PetscSupport::PetscOptions & options = po ? *po : _petsc_options;
-  SolverParams solver_params;
-  solver_params._type = Moose::SolveType::ST_LINEAR;
-  solver_params._line_search = Moose::LineSearchType::LS_NONE;
+  auto & solver_params = _solver_params[numNonlinearSystems() + linear_sys_num];
 
 #if PETSC_RELEASE_LESS_THAN(3, 12, 0)
-  auto ierr = Moose::PetscSupport::petscSetOptions(
-      options, solver_params); // Make sure the PETSc options are setup for this app
-  LIBMESH_CHKERR(ierr);
+  LibmeshPetscCall(Moose::PetscSupport::petscSetOptions(
+      options, solver_params)); // Make sure the PETSc options are setup for this app
 #else
   // Now this database will be the default
   // Each app should have only one database
   if (!_app.isUltimateMaster())
-  {
-    auto ierr = PetscOptionsPush(_petsc_option_data_base);
-    LIBMESH_CHKERR(ierr);
-  }
+    LibmeshPetscCall(PetscOptionsPush(_petsc_option_data_base));
+
   // We did not add PETSc options to database yet
   if (!_is_petsc_options_inserted)
   {
@@ -6297,18 +6488,15 @@ FEProblemBase::solveLinearSystem(const unsigned int linear_sys_num,
 
 #if !PETSC_RELEASE_LESS_THAN(3, 12, 0)
   if (!_app.isUltimateMaster())
-  {
-    auto ierr = PetscOptionsPop();
-    LIBMESH_CHKERR(ierr);
-  }
+    LibmeshPetscCall(PetscOptionsPop());
 #endif
 }
 
 bool
-FEProblemBase::nlConverged(const unsigned int nl_sys_num)
+FEProblemBase::solverSystemConverged(const unsigned int sys_num)
 {
   if (_solve)
-    return _nl[nl_sys_num]->converged();
+    return _solver_systems[sys_num]->converged();
   else
     return true;
 }
@@ -6352,18 +6540,20 @@ FEProblemBase::advanceState()
 {
   TIME_SECTION("advanceState", 5, "Advancing State");
 
-  for (auto & nl : _nl)
-    nl->copyOldSolutions();
+  for (auto & sys : _solver_systems)
+    sys->copyOldSolutions();
   _aux->copyOldSolutions();
 
   if (_displaced_problem)
   {
-    for (const auto i : index_range(_nl))
+    for (const auto i : index_range(_solver_systems))
       _displaced_problem->solverSys(i).copyOldSolutions();
     _displaced_problem->auxSys().copyOldSolutions();
   }
 
   _reporter_data.copyValuesBack();
+
+  getMooseApp().getChainControlDataSystem().copyValuesBack();
 
   if (_material_props.hasStatefulProperties())
     _material_props.shift();
@@ -6533,18 +6723,51 @@ FEProblemBase::addPredictor(const std::string & type,
 }
 
 Real
+FEProblemBase::computeResidualL2Norm(NonlinearSystemBase & sys)
+{
+  _current_nl_sys = &sys;
+  computeResidual(*sys.currentSolution(), sys.RHS(), sys.number());
+  return sys.RHS().l2_norm();
+}
+
+Real
+FEProblemBase::computeResidualL2Norm(LinearSystem & sys)
+{
+  _current_linear_sys = &sys;
+
+  // We assemble the current system to check the current residual
+  computeLinearSystemSys(sys.linearImplicitSystem(),
+                         *sys.linearImplicitSystem().matrix,
+                         *sys.linearImplicitSystem().rhs,
+                         /*compute fresh gradients*/ true);
+
+  // Unfortunate, but we have to allocate a new vector for the residual
+  auto residual = sys.linearImplicitSystem().rhs->clone();
+  residual->scale(-1.0);
+  residual->add_vector(*sys.currentSolution(), *sys.linearImplicitSystem().matrix);
+  return residual->l2_norm();
+}
+
+Real
 FEProblemBase::computeResidualL2Norm()
 {
   TIME_SECTION("computeResidualL2Norm", 2, "Computing L2 Norm of Residual");
 
-  if (_nl.size() > 1)
-    mooseError("Multiple nonlinear systems in the same input are not currently supported when "
-               "performing fixed point iterations in multi-app contexts");
+  // We use sum the squared norms of the individual systems and then take the square root of it
+  Real l2_norm = 0.0;
+  for (auto sys : _nl)
+  {
+    const auto norm = computeResidualL2Norm(*sys);
+    l2_norm += norm * norm;
+  }
 
-  _current_nl_sys = _nl[0].get();
-  computeResidual(*_nl[0]->currentSolution(), _nl[0]->RHS(), /*nl_sys=*/0);
+  for (auto sys : _linear_systems)
+  {
+    const auto norm = computeResidualL2Norm(*sys);
+    l2_norm += norm * norm;
+  }
 
-  return _nl[0]->RHS().l2_norm();
+  return std::sqrt(l2_norm);
 }
 
 void
@@ -6581,11 +6804,13 @@ FEProblemBase::computeResidual(const NumericVector<Number> & soln,
   _current_nl_sys->associateVectorToTag(residual, _current_nl_sys->residualVectorTag());
   const auto & residual_vector_tags = getVectorTags(Moose::VECTOR_TAG_RESIDUAL);
 
+  mooseAssert(_fe_vector_tags.empty(), "This should be empty indicating a clean starting state");
   // We filter out tags which do not have associated vectors in the current nonlinear
   // system. This is essential to be able to use system-dependent residual tags.
   selectVectorTagsFromSystem(*_current_nl_sys, residual_vector_tags, _fe_vector_tags);
 
   computeResidualInternal(soln, residual, _fe_vector_tags);
+  _fe_vector_tags.clear();
 }
 
 void
@@ -6593,42 +6818,21 @@ FEProblemBase::computeResidualAndJacobian(const NumericVector<Number> & soln,
                                           NumericVector<Number> & residual,
                                           SparseMatrix<Number> & jacobian)
 {
-  // vector tags
-  {
-    _current_nl_sys->associateVectorToTag(residual, _current_nl_sys->residualVectorTag());
-    const auto & residual_vector_tags = getVectorTags(Moose::VECTOR_TAG_RESIDUAL);
-
-    // We filter out tags which do not have associated vectors in the current nonlinear
-    // system. This is essential to be able to use system-dependent residual tags.
-    selectVectorTagsFromSystem(*_current_nl_sys, residual_vector_tags, _fe_vector_tags);
-
-    setCurrentResidualVectorTags(_fe_vector_tags);
-  }
-
-  // matrix tags
-  {
-    _fe_matrix_tags.clear();
-
-    auto & tags = getMatrixTags();
-    for (auto & tag : tags)
-      _fe_matrix_tags.insert(tag.second);
-  }
-
   try
   {
     try
     {
       // vector tags
-      {
-        _current_nl_sys->associateVectorToTag(residual, _current_nl_sys->residualVectorTag());
-        const auto & residual_vector_tags = getVectorTags(Moose::VECTOR_TAG_RESIDUAL);
+      _current_nl_sys->associateVectorToTag(residual, _current_nl_sys->residualVectorTag());
+      const auto & residual_vector_tags = getVectorTags(Moose::VECTOR_TAG_RESIDUAL);
 
-        // We filter out tags which do not have associated vectors in the current nonlinear
-        // system. This is essential to be able to use system-dependent residual tags.
-        selectVectorTagsFromSystem(*_current_nl_sys, residual_vector_tags, _fe_vector_tags);
+      mooseAssert(_fe_vector_tags.empty(),
+                  "This should be empty indicating a clean starting state");
+      // We filter out tags which do not have associated vectors in the current nonlinear
+      // system. This is essential to be able to use system-dependent residual tags.
+      selectVectorTagsFromSystem(*_current_nl_sys, residual_vector_tags, _fe_vector_tags);
 
-        setCurrentResidualVectorTags(_fe_vector_tags);
-      }
+      setCurrentResidualVectorTags(_fe_vector_tags);
 
       // matrix tags
       {
@@ -6735,6 +6939,8 @@ FEProblemBase::computeResidualAndJacobian(const NumericVector<Number> & soln,
   }
 
   resetState();
+  _fe_vector_tags.clear();
+  _fe_matrix_tags.clear();
 }
 
 void
@@ -7630,8 +7836,7 @@ FEProblemBase::initialAdaptMesh()
   _cycles_completed = 0;
   if (n)
   {
-    if (_mesh.meshSubdomains().count(Moose::INTERNAL_SIDE_LOWERD_ID) ||
-        _mesh.meshSubdomains().count(Moose::BOUNDARY_SIDE_LOWERD_ID))
+    if (!_mesh.interiorLowerDBlocks().empty() || !_mesh.boundaryLowerDBlocks().empty())
       mooseError("HFEM does not support mesh adaptivity currently.");
 
     TIME_SECTION("initialAdaptMesh", 2, "Performing Initial Adaptivity");
@@ -7676,8 +7881,7 @@ FEProblemBase::adaptMesh()
 
   for (unsigned int i = 0; i < cycles_per_step; ++i)
   {
-    if (_mesh.meshSubdomains().count(Moose::INTERNAL_SIDE_LOWERD_ID) ||
-        _mesh.meshSubdomains().count(Moose::BOUNDARY_SIDE_LOWERD_ID))
+    if (!_mesh.interiorLowerDBlocks().empty() || !_mesh.boundaryLowerDBlocks().empty())
       mooseError("HFEM does not support mesh adaptivity currently.");
 
     // Markers were already computed once by Executioner
@@ -8030,10 +8234,14 @@ FEProblemBase::checkProblemIntegrity()
         std::copy(local_mesh_subs.begin(),
                   local_mesh_subs.end(),
                   std::ostream_iterator<unsigned int>(extra_subdomain_ids, " "));
+        /// vector is necessary to get the subdomain names
+        std::vector<SubdomainID> local_mesh_subs_vec(local_mesh_subs.begin(),
+                                                     local_mesh_subs.end());
 
         mooseError("The following blocks from your input mesh do not contain an active material: " +
                    extra_subdomain_ids.str() +
-                   "\nWhen ANY mesh block contains a Material object, "
+                   "(names: " + Moose::stringify(_mesh.getSubdomainNames(local_mesh_subs_vec)) +
+                   ")\nWhen ANY mesh block contains a Material object, "
                    "all blocks must contain a Material object.\n");
       }
     }
@@ -8309,147 +8517,19 @@ FEProblemBase::getVariableNames()
   return names;
 }
 
-MooseNonlinearConvergenceReason
-FEProblemBase::checkNonlinearConvergence(std::string & msg,
-                                         const PetscInt it,
-                                         const Real xnorm,
-                                         const Real snorm,
-                                         const Real fnorm,
-                                         const Real rtol,
-                                         const Real divtol,
-                                         const Real stol,
-                                         const Real abstol,
-                                         const PetscInt nfuncs,
-                                         const PetscInt max_funcs,
-                                         const Real div_threshold)
-{
-  TIME_SECTION("checkNonlinearConvergence", 5, "Checking Nonlinear Convergence");
-  mooseAssert(_current_nl_sys, "This should be non-null");
-
-  nonlinearConvergenceSetup();
-
-  if (_fail_next_nonlinear_convergence_check)
-  {
-    _fail_next_nonlinear_convergence_check = false;
-    return MooseNonlinearConvergenceReason::DIVERGED_FNORM_NAN;
-  }
-
-  NonlinearSystemBase & system = *_current_nl_sys;
-  MooseNonlinearConvergenceReason reason = MooseNonlinearConvergenceReason::ITERATING;
-
-  Real fnorm_old;
-  // This is the first residual before any iterations have been done, but after solution-modifying
-  // objects (if any) have been imposed on the solution vector.  We save it, and use it to detect
-  // convergence if system.usePreSMOResidual() == false.
-  if (it == 0)
-  {
-    system.setInitialResidual(fnorm);
-    fnorm_old = fnorm;
-    _n_nl_pingpong = 0;
-  }
-  else
-    fnorm_old = system._last_nl_rnorm;
-
-  // Check for nonlinear residual pingpong.
-  // Pingpong will always start from a residual increase
-  if ((_n_nl_pingpong % 2 == 1 && !(fnorm > fnorm_old)) ||
-      (_n_nl_pingpong % 2 == 0 && fnorm > fnorm_old))
-    _n_nl_pingpong += 1;
-  else
-    _n_nl_pingpong = 0;
-
-  std::ostringstream oss;
-  if (fnorm != fnorm)
-  {
-    oss << "Failed to converge, function norm is NaN\n";
-    reason = MooseNonlinearConvergenceReason::DIVERGED_FNORM_NAN;
-  }
-  else if ((it >= _nl_forced_its) && fnorm < abstol)
-  {
-    oss << "Converged due to function norm " << fnorm << " < " << abstol << '\n';
-    reason = MooseNonlinearConvergenceReason::CONVERGED_FNORM_ABS;
-  }
-  else if (nfuncs >= max_funcs)
-  {
-    oss << "Exceeded maximum number of function evaluations: " << nfuncs << " > " << max_funcs
-        << '\n';
-    reason = MooseNonlinearConvergenceReason::DIVERGED_FUNCTION_COUNT;
-  }
-  else if ((it >= _nl_forced_its) && it && fnorm > system._last_nl_rnorm && fnorm >= div_threshold)
-  {
-    oss << "Nonlinear solve was blowing up!\n";
-    reason = MooseNonlinearConvergenceReason::DIVERGED_LINE_SEARCH;
-  }
-
-  if ((it >= _nl_forced_its) && it && reason == MooseNonlinearConvergenceReason::ITERATING)
-  {
-    // Set the reference residual depending on what the user asks us to use.
-    const auto ref_residual = system.referenceResidual();
-    if (checkRelativeConvergence(it, fnorm, ref_residual, rtol, abstol, oss))
-      reason = MooseNonlinearConvergenceReason::CONVERGED_FNORM_RELATIVE;
-    else if (snorm < stol * xnorm)
-    {
-      oss << "Converged due to small update length: " << snorm << " < " << stol << " * " << xnorm
-          << '\n';
-      reason = MooseNonlinearConvergenceReason::CONVERGED_SNORM_RELATIVE;
-    }
-    else if (divtol > 0 && fnorm > ref_residual * divtol)
-    {
-      oss << "Diverged due to residual " << fnorm << " > divergence tolerance " << divtol
-          << " * initial residual " << ref_residual << '\n';
-      reason = MooseNonlinearConvergenceReason::DIVERGED_DTOL;
-    }
-    else if (_nl_abs_div_tol > 0 && fnorm > _nl_abs_div_tol)
-    {
-      oss << "Diverged due to residual " << fnorm << " > absolute divergence tolerance "
-          << _nl_abs_div_tol << '\n';
-      reason = MooseNonlinearConvergenceReason::DIVERGED_DTOL;
-    }
-    else if (_n_nl_pingpong > _n_max_nl_pingpong)
-    {
-      oss << "Diverged due to maximum nonlinear residual pingpong achieved" << '\n';
-      reason = MooseNonlinearConvergenceReason::DIVERGED_NL_RESIDUAL_PINGPONG;
-    }
-  }
-
-  system._last_nl_rnorm = fnorm;
-  system._current_nl_its = static_cast<unsigned int>(it);
-
-  msg = oss.str();
-  if (_app.multiAppLevel() > 0)
-    MooseUtils::indentMessage(_app.name(), msg);
-
-  return reason;
-}
-
-bool
-FEProblemBase::checkRelativeConvergence(const PetscInt /*it*/,
-                                        const Real fnorm,
-                                        const Real ref_residual,
-                                        const Real rtol,
-                                        const Real /*abstol*/,
-                                        std::ostringstream & oss)
-{
-  if (_fail_next_nonlinear_convergence_check)
-    return false;
-  if (fnorm <= ref_residual * rtol)
-  {
-    oss << "Converged due to function norm " << fnorm << " < relative tolerance (" << rtol << ")\n";
-    return true;
-  }
-  return false;
-}
-
 SolverParams &
-FEProblemBase::solverParams()
+FEProblemBase::solverParams(const unsigned int solver_sys_num)
 {
-  return _solver_params;
+  mooseAssert(solver_sys_num < numSolverSystems(),
+              "Solver system number '" << solver_sys_num << "' is out of bounds. We have '"
+                                       << numSolverSystems() << "' solver systems");
+  return _solver_params[solver_sys_num];
 }
 
 const SolverParams &
-FEProblemBase::solverParams() const
+FEProblemBase::solverParams(const unsigned int solver_sys_num) const
 {
-  return _solver_params;
+  return const_cast<FEProblemBase *>(this)->solverParams(solver_sys_num);
 }
 
 void
@@ -8661,6 +8741,24 @@ FEProblemBase::haveADObjects(const bool have_ad_objects)
 }
 
 const SystemBase &
+FEProblemBase::getSystemBase(const unsigned int sys_num) const
+{
+  if (sys_num < _solver_systems.size())
+    return *_solver_systems[sys_num];
+
+  return *_aux;
+}
+
+SystemBase &
+FEProblemBase::getSystemBase(const unsigned int sys_num)
+{
+  if (sys_num < _solver_systems.size())
+    return *_solver_systems[sys_num];
+
+  return *_aux;
+}
+
+const SystemBase &
 FEProblemBase::systemBaseNonlinear(const unsigned int sys_num) const
 {
   mooseAssert(sys_num < _nl.size(), "System number greater than the number of nonlinear systems");
@@ -8788,15 +8886,15 @@ FEProblemBase::getFVMatsAndDependencies(
     for (std::shared_ptr<MaterialBase> face_mat : this_face_mats)
       if (face_mat->ghostable())
       {
-        mooseAssert(!face_mat->hasStatefulProperties(),
-                    "Finite volume materials do not currently support stateful properties.");
         face_materials.push_back(face_mat);
         auto & var_deps = face_mat->getMooseVariableDependencies();
         for (auto * var : var_deps)
         {
-          mooseAssert(
-              var->isFV(),
-              "Ghostable materials should only have finite volume variables coupled into them.");
+          if (!var->isFV())
+            mooseError(
+                "Ghostable materials should only have finite volume variables coupled into them.");
+          else if (face_mat->hasStatefulProperties())
+            mooseError("Finite volume materials do not currently support stateful properties.");
           variables.insert(var);
         }
       }
@@ -8809,16 +8907,16 @@ FEProblemBase::getFVMatsAndDependencies(
     for (std::shared_ptr<MaterialBase> neighbor_mat : this_neighbor_mats)
       if (neighbor_mat->ghostable())
       {
-        mooseAssert(!neighbor_mat->hasStatefulProperties(),
-                    "Finite volume materials do not currently support stateful properties.");
         neighbor_materials.push_back(neighbor_mat);
 #ifndef NDEBUG
         auto & var_deps = neighbor_mat->getMooseVariableDependencies();
         for (auto * var : var_deps)
         {
-          mooseAssert(
-              var->isFV(),
-              "Ghostable materials should only have finite volume variables coupled into them.");
+          if (!var->isFV())
+            mooseError(
+                "Ghostable materials should only have finite volume variables coupled into them.");
+          else if (neighbor_mat->hasStatefulProperties())
+            mooseError("Finite volume materials do not currently support stateful properties.");
           auto pr = variables.insert(var);
           mooseAssert(!pr.second,
                       "We should not have inserted any new variables dependencies from our "
@@ -8835,6 +8933,25 @@ FEProblemBase::resizeMaterialData(const Moose::MaterialDataType data_type,
                                   const THREAD_ID tid)
 {
   getMaterialData(data_type, tid).resize(nqp);
+}
+
+void
+FEProblemBase::setNonlinearConvergenceNames(const std::vector<ConvergenceName> & convergence_names)
+{
+  if (convergence_names.size() != numNonlinearSystems())
+    paramError("nonlinear_convergence",
+               "There must be one convergence object per nonlinear system");
+  _nonlinear_convergence_names = convergence_names;
+  _set_nonlinear_convergence_names = true;
+}
+
+std::vector<ConvergenceName>
+FEProblemBase::getNonlinearConvergenceNames() const
+{
+  if (_set_nonlinear_convergence_names)
+    return _nonlinear_convergence_names;
+  else
+    mooseError("The nonlinear convergence name(s) have not been set.");
 }
 
 void
@@ -8874,13 +8991,23 @@ FEProblemBase::coordTransform()
 unsigned int
 FEProblemBase::currentNlSysNum() const
 {
-  return currentNonlinearSystem().number();
+  // If we don't have nonlinear systems this should be an invalid number
+  unsigned int current_nl_sys_num = libMesh::invalid_uint;
+  if (_nl.size())
+    current_nl_sys_num = currentNonlinearSystem().number();
+
+  return current_nl_sys_num;
 }
 
 unsigned int
 FEProblemBase::currentLinearSysNum() const
 {
-  return currentLinearSystem().number();
+  // If we don't have linear systems this should be an invalid number
+  unsigned int current_linear_sys_num = libMesh::invalid_uint;
+  if (_linear_systems.size())
+    current_linear_sys_num = currentLinearSystem().number();
+
+  return current_linear_sys_num;
 }
 
 bool
@@ -8939,15 +9066,6 @@ FEProblemBase::reinitMortarUserObjects(const BoundaryID primary_boundary_id,
     mortar_uo->setNormals();
     mortar_uo->reinit();
   }
-}
-
-void
-FEProblemBase::doingPRefinement(const bool doing_p_refinement,
-                                const MultiMooseEnum & disable_p_refinement_for_families)
-{
-  SubProblem::doingPRefinement(doing_p_refinement, disable_p_refinement_for_families);
-  if (_displaced_problem)
-    _displaced_problem->doingPRefinement(doing_p_refinement, disable_p_refinement_for_families);
 }
 
 void
@@ -9062,4 +9180,25 @@ FEProblemBase::setCurrentAlgebraicBndNodeRange(ConstBndNodeRange * range)
   }
 
   _current_algebraic_bnd_node_range = std::make_unique<ConstBndNodeRange>(*range);
+}
+
+unsigned short
+FEProblemBase::getCurrentICState()
+{
+  return _current_ic_state;
+}
+
+std::string
+FEProblemBase::solverTypeString(const unsigned int solver_sys_num)
+{
+  return Moose::stringify(solverParams(solver_sys_num)._type);
+}
+
+SolverParams
+FEProblemBase::makeLinearSolverParams()
+{
+  SolverParams solver_params;
+  solver_params._type = Moose::SolveType::ST_LINEAR;
+  solver_params._line_search = Moose::LineSearchType::LS_NONE;
+  return solver_params;
 }

@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -118,7 +118,8 @@ protected:
   Moose::FaceArg singleSidedFaceArg(
       const FaceInfo * fi = nullptr,
       Moose::FV::LimiterType limiter_type = Moose::FV::LimiterType::CentralDifference,
-      bool correct_skewness = false) const;
+      bool correct_skewness = false,
+      const Moose::StateArg * state_limiter = nullptr) const;
 
   /**
    * Returns whether to avoid execution on a boundary

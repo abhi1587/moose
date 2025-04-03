@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -23,6 +23,8 @@
 #include "libmesh/numeric_vector.h"
 #include "libmesh/fe_interface.h"
 #include "libmesh/mesh_base.h"
+
+using namespace libMesh;
 
 registerMooseObject("MooseApp", DisplacedProblem);
 
@@ -875,7 +877,7 @@ DisplacedProblem::reinitElemNeighborAndLowerD(const Elem * elem,
   reinitNeighbor(elem, side, tid);
 
   const Elem * lower_d_elem = _mesh.getLowerDElem(elem, side);
-  if (lower_d_elem && lower_d_elem->subdomain_id() == Moose::INTERNAL_SIDE_LOWERD_ID)
+  if (lower_d_elem && _mesh.interiorLowerDBlocks().count(lower_d_elem->subdomain_id()) > 0)
     reinitLowerDElem(lower_d_elem, tid);
   else
   {
@@ -884,12 +886,12 @@ DisplacedProblem::reinitElemNeighborAndLowerD(const Elem * elem,
     auto & neighbor_side = _assembly[tid][currentNlSysNum()]->neighborSide();
     const Elem * lower_d_elem_neighbor = _mesh.getLowerDElem(neighbor, neighbor_side);
     if (lower_d_elem_neighbor &&
-        lower_d_elem_neighbor->subdomain_id() == Moose::INTERNAL_SIDE_LOWERD_ID)
+        _mesh.interiorLowerDBlocks().count(lower_d_elem_neighbor->subdomain_id()) > 0)
     {
       auto qps = _assembly[tid][currentNlSysNum()]->qPointsFaceNeighbor().stdVector();
       std::vector<Point> reference_points;
-      FEInterface::inverse_map(
-          lower_d_elem_neighbor->dim(), FEType(), lower_d_elem_neighbor, qps, reference_points);
+      FEMap::inverse_map(
+          lower_d_elem_neighbor->dim(), lower_d_elem_neighbor, qps, reference_points);
       reinitLowerDElem(lower_d_elem_neighbor, tid, &qps);
     }
   }
@@ -1143,9 +1145,9 @@ DisplacedProblem::refMesh()
 }
 
 bool
-DisplacedProblem::nlConverged(const unsigned int nl_sys_num)
+DisplacedProblem::solverSystemConverged(const unsigned int sys_num)
 {
-  return _mproblem.converged(nl_sys_num);
+  return _mproblem.converged(sys_num);
 }
 
 bool

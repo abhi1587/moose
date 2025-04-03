@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -36,8 +36,7 @@ ExternalPetscTimeStepper::computeInitialDT()
 {
   // Query the time step size of PETSc solver
   PetscReal dt;
-  auto ierr = TSGetTimeStep(_external_petsc_problem.getPetscTS(), &dt);
-  LIBMESH_CHKERR(ierr);
+  LibmeshPetscCall(TSGetTimeStep(_external_petsc_problem.getPetscTS(), &dt));
   return dt;
 }
 
@@ -46,7 +45,6 @@ ExternalPetscTimeStepper::computeDT()
 {
   // Query the time step size of PETSc solver
   PetscReal dt;
-  auto ierr = TSGetTimeStep(_external_petsc_problem.getPetscTS(), &dt);
-  LIBMESH_CHKERR(ierr);
+  LibmeshPetscCall(TSGetTimeStep(_external_petsc_problem.getPetscTS(), &dt));
   return dt;
 }

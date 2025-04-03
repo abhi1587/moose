@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -57,20 +57,24 @@ NSFVBase::commonMomentumEquationParams()
       "dynamic_viscosity", NS::mu, "The name of the dynamic viscosity");
   params.addParam<MooseFunctorName>("density", NS::density, "The name of the density");
 
+  // Dynamic pressure parameter
+  // TODO: make default
+  params.addParam<bool>("solve_for_dynamic_pressure",
+                        false,
+                        "Whether to solve for the dynamic pressure instead of the total pressure");
+
+  // Pressure pin parameters
   params.addParam<bool>(
       "pin_pressure", false, "Switch to enable pressure shifting for incompressible simulations.");
-
   MooseEnum s_type("average point-value average-uo point-value-uo", "average-uo");
   params.addParam<MooseEnum>(
       "pinned_pressure_type",
       s_type,
       "Types for shifting (pinning) the pressure in case of incompressible simulations.");
-
   params.addParam<Point>(
       "pinned_pressure_point",
       Point(),
       "The XYZ coordinates where pressure needs to be pinned for incompressible simulations.");
-
   params.addParam<PostprocessorName>(
       "pinned_pressure_value",
       "1e5",
@@ -208,14 +212,16 @@ NSFVBase::commonFluidEnergyEquationParams()
       std::vector<MooseFunctorName>(),
       "Functions for fixed-value boundaries in the energy equation.");
 
-  MultiMooseEnum en_wall_types("fixed-temperature heatflux wallfunction");
+  MultiMooseEnum en_wall_types("fixed-temperature heatflux wallfunction convection");
   params.addParam<MultiMooseEnum>(
       "energy_wall_types", en_wall_types, "Types for the wall boundaries for the energy equation.");
 
   params.addParam<std::vector<MooseFunctorName>>(
       "energy_wall_function",
       std::vector<MooseFunctorName>(),
-      "Functions for Dirichlet/Neumann boundaries in the energy equation.");
+      "Functions for Dirichlet/Neumann boundaries in the energy equation. For wall types requiring "
+      "multiple functions, the syntax is <function_1>:<function_2>:... So, 'convection' types are "
+      "'<Tinf_function>:<htc_function>'.");
 
   params.addParam<std::vector<std::vector<SubdomainName>>>(
       "ambient_convection_blocks",
@@ -401,6 +407,12 @@ NSFVBase::validParams()
   params.addParam<MooseEnum>("porosity_interface_pressure_treatment",
                              porosity_interface_pressure_treatment,
                              "How to treat pressure at a porosity interface");
+  params.addParam<std::vector<BoundaryName>>(
+      "pressure_drop_sidesets", {}, "Sidesets over which form loss coefficients are to be applied");
+  params.addParam<std::vector<Real>>(
+      "pressure_drop_form_factors",
+      {},
+      "User-supplied form loss coefficients to be applied over the sidesets listed above");
 
   params.addParam<bool>("use_friction_correction",
                         false,
@@ -411,7 +423,8 @@ NSFVBase::validParams()
       "Scaling parameter for the friction correction in the momentum equation (if requested).");
 
   params.addParamNamesToGroup("porosity porosity_smoothing_layers use_friction_correction "
-                              "consistent_scaling porosity_interface_pressure_treatment",
+                              "consistent_scaling porosity_interface_pressure_treatment "
+                              "pressure_drop_sidesets pressure_drop_form_factors",
                               "Porous medium treatment");
 
   /**

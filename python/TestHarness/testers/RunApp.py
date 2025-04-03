@@ -1,5 +1,5 @@
 #* This file is part of the MOOSE framework
-#* https://www.mooseframework.org
+#* https://mooseframework.inl.gov
 #*
 #* All rights reserved, see COPYRIGHT for full restrictions
 #* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -213,7 +213,7 @@ class RunApp(Tester):
             # and it is NOT supplied already in the cli-args option
             cli_args.append('--distributed-mesh')
 
-        if '--error' not in cli_args and (not specs["allow_warnings"] or options.error):
+        if '--error' not in cli_args and (not specs["allow_warnings"] or options.error) and not options.allow_warnings:
             cli_args.append('--error')
 
         if '--error-unused' not in cli_args and options.error_unused:
@@ -254,7 +254,10 @@ class RunApp(Tester):
         if specs['redirect_output'] and ncpus > 1:
             cli_args.append('--keep-cout --redirect-output ' + self.name())
 
-        command = specs['executable'] + ' ' + specs['input_switch'] + ' ' + specs['input'] + ' ' + ' '.join(cli_args)
+        command = specs['executable'] + ' '
+        if len(specs['input']) > 0: # only apply if we have input set
+            command += specs['input_switch'] + ' ' + specs['input'] + ' '
+        command += ' '.join(cli_args)
         if options.valgrind_mode.upper() == specs['valgrind'].upper() or options.valgrind_mode.upper() == 'HEAVY' and specs['valgrind'].upper() == 'NORMAL':
             command = 'valgrind --suppressions=' + os.path.join(specs['moose_dir'], 'python', 'TestHarness', 'suppressions', 'errors.supp') + ' --leak-check=full --tool=memcheck --dsymutil=yes --track-origins=yes --demangle=yes -v ' + command
         elif nthreads > 1:

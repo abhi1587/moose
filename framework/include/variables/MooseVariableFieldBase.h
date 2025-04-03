@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -182,18 +182,18 @@ public:
   /**
    * Insert the currently cached degree of freedom values into the provided \p vector
    */
-  virtual void insert(NumericVector<Number> & vector) = 0;
+  virtual void insert(libMesh::NumericVector<libMesh::Number> & vector) = 0;
 
   /**
    * Insert the currently cached degree of freedom values for a lower-dimensional element into the
    * provided \p vector
    */
-  virtual void insertLower(NumericVector<Number> & vector) = 0;
+  virtual void insertLower(libMesh::NumericVector<libMesh::Number> & vector) = 0;
 
   /**
    * Add the currently cached degree of freedom values into the provided \p vector
    */
-  virtual void add(NumericVector<Number> & vector) = 0;
+  virtual void add(libMesh::NumericVector<libMesh::Number> & vector) = 0;
 
   /**
    * Return phi size

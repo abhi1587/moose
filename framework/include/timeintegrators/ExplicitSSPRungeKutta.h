@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -57,9 +57,9 @@ protected:
   std::vector<const NumericVector<Number> *> _solution_stage;
 
   /// Solution vector for intermediate stage
-  NumericVector<Number> & _solution_intermediate_stage;
+  NumericVector<Number> * _solution_intermediate_stage;
   /// Temporary solution vector
-  NumericVector<Number> & _tmp_solution;
+  NumericVector<Number> * _tmp_solution;
   /// Temporary mass-matrix/solution vector product
-  NumericVector<Number> & _tmp_mass_solution_product;
+  NumericVector<Number> * _tmp_mass_solution_product;
 };

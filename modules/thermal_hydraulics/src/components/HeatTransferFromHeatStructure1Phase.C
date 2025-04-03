@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -38,7 +38,7 @@ HeatTransferFromHeatStructure1Phase::HeatTransferFromHeatStructure1Phase(
 {
 }
 
-const FEType &
+const libMesh::FEType &
 HeatTransferFromHeatStructure1Phase::getFEType()
 {
   return HeatConductionModel::feType();

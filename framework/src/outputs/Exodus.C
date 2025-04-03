@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -20,6 +20,8 @@
 
 #include "libmesh/exodusII_io.h"
 #include "libmesh/libmesh_config.h" // LIBMESH_HAVE_HDF5
+
+using namespace libMesh;
 
 registerMooseObject("MooseApp", Exodus);
 
@@ -532,6 +534,14 @@ Exodus::handleExodusIOMeshRenumbering()
   // We know exodus_io renumbered on the first write_timestep()
   if (!_exodus_initialized && !_mesh_contiguous_numbering)
   {
+    // We renumbered our mesh, so we need to allow the other mesh to do the same
+    if (auto * const disp_problem = _problem_ptr->getDisplacedProblem().get(); disp_problem)
+    {
+      auto & disp_eq = disp_problem->es();
+      auto & other_mesh = &disp_eq == _es_ptr ? _problem_ptr->mesh().getMesh() : disp_eq.get_mesh();
+      other_mesh.allow_renumbering(true);
+    }
+
     // Objects that depend on element/node ids are no longer valid
     _problem_ptr->meshChanged();
     _mesh_contiguous_numbering = true;

@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -55,8 +55,9 @@ ElementGroupCentroidPositions::ElementGroupCentroidPositions(const InputParamete
     _extra_id_group_indices = getParam<std::vector<std::vector<unsigned int>>>("extra_id");
 
     if (_extra_id_group_indices.size() != _extra_id_names.size())
-      mooseError("Number of extra id names and the indices to select must match. "
-                 "If you want all indices for an extra id, use this pattern '; ;'");
+      paramError("extra_id",
+                 "Number of extra id names and the indices to select must match. "
+                 "If you want all indices for an extra id, use an empty vector entry");
 
     // Can only have so many groups though, considering 4D max capability
     if (_extra_id_indices.size() > unsigned(3 + blockRestricted()))

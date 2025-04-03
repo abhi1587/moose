@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -33,6 +33,7 @@
 #include "UserObject.h"
 #include "SolutionInvalidity.h"
 #include "MooseLinearVariableFV.h"
+#include "LinearFVTimeDerivative.h"
 
 // libMesh
 #include "libmesh/linear_solver.h"
@@ -54,6 +55,8 @@
 #include "libmesh/petsc_solver_exception.h"
 
 #include <ios>
+
+using namespace libMesh;
 
 namespace Moose
 {
@@ -78,6 +81,7 @@ LinearSystem::LinearSystem(FEProblemBase & fe_problem, const std::string & name)
     _rhs_non_time_tag(-1),
     _rhs_non_time(NULL),
     _n_linear_iters(0),
+    _converged(false),
     _linear_implicit_system(fe_problem.es().get_system<LinearImplicitSystem>(name))
 {
   getRightHandSideNonTimeVector();
@@ -180,6 +184,10 @@ LinearSystem::computeLinearSystemInternal(const std::set<TagID> & vector_tags,
 {
   TIME_SECTION("computeLinearSystemInternal", 3);
 
+  // Before we assemble we clear up the matrix and the vector
+  _linear_implicit_system.matrix->zero();
+  _linear_implicit_system.rhs->zero();
+
   // Make matrix ready to use
   activeAllMatrixTags();
 
@@ -189,15 +197,12 @@ LinearSystem::computeLinearSystemInternal(const std::set<TagID> & vector_tags,
     // Necessary for speed
     if (auto petsc_matrix = dynamic_cast<PetscMatrix<Number> *>(&matrix))
     {
-      auto ierr = MatSetOption(petsc_matrix->mat(),
-                               MAT_KEEP_NONZERO_PATTERN, // This is changed in 3.1
-                               PETSC_TRUE);
-      LIBMESH_CHKERR(ierr);
+      LibmeshPetscCall(MatSetOption(petsc_matrix->mat(),
+                                    MAT_KEEP_NONZERO_PATTERN, // This is changed in 3.1
+                                    PETSC_TRUE));
       if (!_fe_problem.errorOnJacobianNonzeroReallocation())
-      {
-        ierr = MatSetOption(petsc_matrix->mat(), MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE);
-        LIBMESH_CHKERR(ierr);
-      }
+        LibmeshPetscCall(
+            MatSetOption(petsc_matrix->mat(), MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE));
     }
   }
 
@@ -238,6 +243,7 @@ LinearSystem::computeLinearSystemInternal(const std::set<TagID> & vector_tags,
 
   // Accumulate the occurrence of solution invalid warnings for the current iteration cumulative
   // counters
+  _app.solutionInvalidity().syncIteration();
   _app.solutionInvalidity().solutionInvalidAccumulation();
 }
 
@@ -271,23 +277,56 @@ LinearSystem::solve()
 
   system().solve();
 
+  // store info about the solve
   _n_linear_iters = _linear_implicit_system.n_linear_iterations();
 
-  // store info about the solve
+  auto & linear_solver =
+      libMesh::cast_ref<PetscLinearSolver<Real> &>(*_linear_implicit_system.get_linear_solver());
+  _initial_linear_residual = linear_solver.get_initial_residual();
   _final_linear_residual = _linear_implicit_system.final_linear_residual();
+  _converged = linear_solver.get_converged_reason() > 0;
+
+  _console << "System: " << this->name() << " Initial residual: " << _initial_linear_residual
+           << " Final residual: " << _final_linear_residual << " Num. of Iter. " << _n_linear_iters
+           << std::endl;
 
   // determine whether solution invalid occurs in the converged solution
   checkInvalidSolution();
 }
 
 void
-LinearSystem::stopSolve(const ExecFlagType & /*exec_flag*/)
+LinearSystem::stopSolve(const ExecFlagType & /*exec_flag*/,
+                        const std::set<TagID> & vector_tags_to_close)
 {
   // We close the containers in case the solve restarts from a failed iteration
+  closeTaggedVectors(vector_tags_to_close);
   _linear_implicit_system.matrix->close();
-  _linear_implicit_system.rhs->close();
-  if (_rhs_time)
-    _rhs_time->close();
-  if (_rhs_non_time)
-    _rhs_non_time->close();
+}
+
+bool
+LinearSystem::containsTimeKernel()
+{
+  // Right now, FV kernels are in TheWarehouse so we have to use that.
+  std::vector<LinearFVKernel *> kernels;
+  auto base_query = _fe_problem.theWarehouse()
+                        .query()
+                        .template condition<AttribSysNum>(this->number())
+                        .template condition<AttribSystem>("LinearFVKernel")
+                        .queryInto(kernels);
+
+  bool contains_time_kernel = false;
+  for (const auto kernel : kernels)
+  {
+    contains_time_kernel = dynamic_cast<LinearFVTimeDerivative *>(kernel);
+    if (contains_time_kernel)
+      break;
+  }
+
+  return contains_time_kernel;
+}
+
+void
+LinearSystem::compute(ExecFlagType)
+{
+  // Linear systems have their own time derivative computation machinery
 }

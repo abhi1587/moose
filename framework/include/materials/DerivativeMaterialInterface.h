@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -428,7 +428,7 @@ DerivativeMaterialInterface<T>::validateCouplingHelper(const MaterialPropertyNam
   // iterate over all variables in the current system (in groups)
   for (unsigned int i = 0; i < system.n_variable_groups(); ++i)
   {
-    const VariableGroup & vg = system.variable_group(i);
+    const libMesh::VariableGroup & vg = system.variable_group(i);
     for (unsigned int j = 0; j < vg.n_variables(); ++j)
     {
       std::vector<SymbolName> cj(c.begin(), c.end());

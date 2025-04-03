@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -123,9 +123,8 @@ SetupMeshAction::validParams()
 SetupMeshAction::SetupMeshAction(const InputParameters & params)
   : MooseObjectAction(params),
     _use_split(getParam<bool>("use_split") || _app.getParam<bool>("use_split")),
-    _split_file(_app.getParam<std::string>("split_file").size()
-                    ? _app.getParam<std::string>("split_file")
-                    : getParam<std::string>("split_file"))
+    _split_file(_app.isParamSetByUser("split_file") ? _app.getParam<std::string>("split_file")
+                                                    : getParam<std::string>("split_file"))
 {
 }
 
@@ -152,7 +151,8 @@ SetupMeshAction::setupMesh(MooseMesh * mesh)
   unsigned int level = getParam<unsigned int>("uniform_refine");
 
   // Did they specify extra refinement levels on the command-line?
-  level += _app.getParam<unsigned int>("refinements");
+  if (_app.isParamSetByUser("refinements"))
+    level += _app.getParam<unsigned int>("refinements");
 
   mesh->setUniformRefineLevel(level, getParam<bool>("skip_deletion_repartition_after_refine"));
 #endif // LIBMESH_ENABLE_AMR
@@ -284,10 +284,9 @@ SetupMeshAction::act()
           for (auto generator_action_ptr : generator_actions)
             if (dynamic_cast<AddMeshGeneratorAction *>(generator_action_ptr))
             {
-              mooseWarning("Mesh Generators present but the [Mesh] block is set to construct a \"",
-                           _type,
-                           "\" mesh, which does not use Mesh Generators in constructing the mesh.");
-              break;
+              mooseError("Mesh Generators present but the [Mesh] block is set to construct a \"",
+                         _type,
+                         "\" mesh, which does not use Mesh Generators in constructing the mesh. ");
             }
         }
       }

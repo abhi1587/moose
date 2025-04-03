@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -8,7 +8,7 @@
 //* https://www.gnu.org/licenses/lgpl-2.1.html
 
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -26,6 +26,8 @@ InputParameters
 HomogenizationConstraint::validParams()
 {
   InputParameters params = ElementUserObject::validParams();
+  params.addClassDescription("Calculate element contribution to the homogenization constraint "
+                             "depending on the homogenization constraint type.");
   params.addRequiredParam<MultiMooseEnum>(
       "constraint_types",
       Homogenization::constraintType,

@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -9,32 +9,27 @@
 
 #pragma once
 
-#include "MOOSEToNEML2.h"
-
-#ifndef NEML2_ENABLED
-NEML2ObjectStubHeader(MOOSEVariableToNEML2, MOOSEToNEML2);
-NEML2ObjectStubHeader(MOOSEOldVariableToNEML2, MOOSEToNEML2);
-#else
+#include "MOOSEToNEML2Batched.h"
 
 /**
- * Gather a MOOSE variable for insertion into the specified input of a NEML2 model.
+ * Gather a MOOSE variable for insertion into the NEML2 model.
  */
 template <unsigned int state>
-class MOOSEVariableToNEML2Templ : public MOOSEToNEML2
+class MOOSEVariableToNEML2Templ : public MOOSEToNEML2Batched<Real>
 {
 public:
   static InputParameters validParams();
 
   MOOSEVariableToNEML2Templ(const InputParameters & params);
 
+#ifdef NEML2_ENABLED
 protected:
-  virtual torch::Tensor convertQpMOOSEData() const override;
+  const MooseArray<Real> & elemMOOSEData() const override { return _moose_variable; }
 
   /// Coupled MOOSE variable to read data from
   const VariableValue & _moose_variable;
+#endif
 };
 
-typedef MOOSEVariableToNEML2Templ<0> MOOSEVariableToNEML2;
-typedef MOOSEVariableToNEML2Templ<1> MOOSEOldVariableToNEML2;
-
-#endif
+using MOOSEVariableToNEML2 = MOOSEVariableToNEML2Templ<0>;
+using MOOSEOldVariableToNEML2 = MOOSEVariableToNEML2Templ<1>;

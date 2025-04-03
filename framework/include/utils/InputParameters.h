@@ -1,5 +1,5 @@
 //* This file is part of the MOOSE framework
-//* https://www.mooseframework.org
+//* https://mooseframework.inl.gov
 //*
 //* All rights reserved, see COPYRIGHT for full restrictions
 //* https://github.com/idaholab/moose/blob/master/COPYRIGHT
@@ -16,6 +16,7 @@
 #include "MultiMooseEnum.h"
 #include "ExecFlagEnum.h"
 #include "Conversion.h"
+#include "DataFileUtils.h"
 
 #include "libmesh/parameters.h"
 
@@ -33,6 +34,7 @@ class FunctionParserBase
 #include <mutex>
 #include <optional>
 #include <filesystem>
+#include <regex>
 
 #include <gtest/gtest.h>
 
@@ -55,12 +57,13 @@ namespace Moose
 {
 class Builder;
 }
+class CommandLine;
 
 /**
  * The main MOOSE class responsible for handling user-defined
  * parameters in almost every MOOSE system.
  */
-class InputParameters : public Parameters
+class InputParameters : public libMesh::Parameters
 {
 public:
   InputParameters(const InputParameters & rhs);
@@ -82,10 +85,18 @@ public:
       REQUIRED
     };
 
-    /// The syntax for the parameter (i.e., ["-t", "--timing"])
-    std::vector<std::string> syntax;
+    /// The syntax for the parameter
+    std::string syntax;
+    /// The switches for the parameter (i.e., [-t, --timing])
+    std::vector<std::string> switches;
     /// The type of argument
     ArgumentType argument_type;
+    /// Whether or not the argument is required
+    bool required;
+    /// Whether or not the parameter was set by the CommandLine
+    bool set_by_command_line = false;
+    /// Whether or not the parameter is global (passed to MultiApps)
+    bool global = false;
   };
 
   /**
@@ -115,6 +126,22 @@ public:
     FRIEND_TEST(InputParametersTest, fileNames);
     SetParamHitNodeKey() {}
     SetParamHitNodeKey(const SetParamHitNodeKey &) {}
+  };
+
+  /**
+   * Determines whether or not the given type is a type that is supported for
+   * a command line parameter.
+   *
+   * In particular, whether or not CommandLine::populateCommandLineParams
+   * supports extracting these types.
+   */
+  template <typename T>
+  struct isValidCommandLineType
+  {
+    static constexpr bool value =
+        std::is_same_v<T, std::string> || std::is_same_v<T, std::vector<std::string>> ||
+        std::is_same_v<T, Real> || std::is_same_v<T, unsigned int> || std::is_same_v<T, int> ||
+        std::is_same_v<T, bool> || std::is_same_v<T, MooseEnum>;
   };
 
   /**
@@ -312,6 +339,44 @@ public:
                            const std::string & syntax,
                            const T & value,
                            const std::string & doc_string);
+  template <typename T>
+  void addCommandLineParam(const std::string & name,
+                           const std::string & syntax,
+                           const std::initializer_list<typename T::value_type> & value,
+                           const std::string & doc_string)
+  {
+    addCommandLineParam<T>(name, syntax, T{value}, doc_string);
+  }
+
+  /**
+   * Add a command line parameter with an optional value.
+   *
+   * This is a deprecated option and only remains for two parameters:
+   * "mesh_only" and "recover". There are issues with command line
+   * parameters with optional values because if a value following
+   * one of these is a hit cli parameter, we don't know if we should
+   * apply it to the optional option or as a hit parameter.
+   *
+   * It is also allowed for "run" as we take all arguments past
+   * --run and pass to python.
+   *
+   * @param name The name of the parameer
+   * @param syntax Space separated list of command-line switch syntax that can set this option
+   * @param value The default value to assign
+   * @param doc_string Documentation.  This will be shown for --help
+   */
+  template <typename T>
+  void addOptionalValuedCommandLineParam(const std::string & name,
+                                         const std::string & syntax,
+                                         const T & value,
+                                         const std::string & doc_string);
+
+  /**
+   * Sets the command line parameter with \p name as global.
+   *
+   * Global here means that it will be passed to all child MultiApps.
+   */
+  void setGlobalCommandLineParam(const std::string & name);
 
   /**
    * @param name The name of the parameter
@@ -349,14 +414,36 @@ public:
   bool isCommandLineParameter(const std::string & name) const;
 
   /**
-   * @return The command line syntax for the parameter \p name
+   * @return Queries for the command line metadata for the parameter \p name
+   *
+   * Will return an empty optional if the parameter is not a command line param.
    */
-  const std::vector<std::string> & getCommandLineSyntax(const std::string & name) const;
+  std::optional<InputParameters::CommandLineMetadata>
+  queryCommandLineMetadata(const std::string & name) const;
 
   /**
-   * @return The command line argument type for the parameter \p name
+   * @return The command line metadata for the parameter \p name.
    */
-  CommandLineMetadata::ArgumentType getCommandLineArgumentType(const std::string & name) const;
+  const InputParameters::CommandLineMetadata &
+  getCommandLineMetadata(const std::string & name) const;
+
+  /**
+   * Class that is used as a parameter to commandLineParamSet() that allows only
+   * the CommandLine to set that a parmeter is set by the command line
+   */
+  class CommandLineParamSetKey
+  {
+    friend class CommandLine;
+    FRIEND_TEST(InputParametersTest, commandLineParamSetNotCLParam);
+    CommandLineParamSetKey() {}
+    CommandLineParamSetKey(const CommandLineParamSetKey &) {}
+  };
+  /**
+   * Marks the command line parameter \p name as set by the CommandLine.
+   *
+   * Protected by the CommandLineParamSetKey so that only the CommandLine can call this.
+   */
+  void commandLineParamSet(const std::string & name, const CommandLineParamSetKey);
 
   /**
    * Get the documentation string for a parameter
@@ -708,9 +795,11 @@ public:
   void finalize(const std::string & parsing_syntax);
 
   /**
-   * @return A file base to associate with the parameter with name \p param_name.
+   * @return A file base to associate with these parameters.
    *
-   * We have the following cases:
+   * Optionally, an input parameter can be provided via \p param_name.
+   *
+   * If the parameter is provided, we have the following options:
    * - The parameter itself has a hit node set (context for that parameter)
    * - The InputParameters object has a hit node set (context for all parameters)
    * - Neither of the above and we die
@@ -718,7 +807,8 @@ public:
    * In the event that a the parameter is set via command line, this will
    * attempt to look at the parameter's parents to find a suitable context.
    */
-  std::filesystem::path getParamFileBase(const std::string & param_name) const;
+  std::filesystem::path
+  getFileBase(const std::optional<std::string> & param_name = std::optional<std::string>()) const;
 
   /**
    * Methods returning iterators to the coupled variables names stored in this
@@ -806,7 +896,7 @@ public:
    *
    * In order to apply common parameter 4 statements must be satisfied
    *   (1) A local parameter must exist with the same name as common parameter
-   *   (2) Common parameter must valid
+   *   (2) Common parameter must be valid
    *   (3) Local parameter must be invalid OR not have been set from its default
    *   (4) Both cannot be private (unless \p allow_private = true)
    *
@@ -1109,6 +1199,11 @@ public:
    */
   bool isFinalized() const { return _finalized; }
 
+  /**
+   * @return The DataFileName path for the parameter \p name (if any).
+   */
+  std::optional<Moose::DataFileUtils::Path> queryDataFileNamePath(const std::string & name) const;
+
 private:
   // Private constructor so that InputParameters can only be created in certain places.
   InputParameters();
@@ -1149,6 +1244,8 @@ private:
     std::string _custom_type;
     /// The data pertaining to a command line parameter (empty if not a command line param)
     std::optional<CommandLineMetadata> _cl_data;
+    /// The searched path information pertaining to a DataFileName parameter
+    std::optional<Moose::DataFileUtils::Path> _data_file_name_path;
     /// The names of the parameters organized into groups
     std::string _group;
     /// The map of functions used for range checked parameters
@@ -1223,15 +1320,18 @@ private:
   void setParamHelper(const std::string & name, T & l_value, const S & r_value);
 
   /**
-   * @return The command line metadata for the parameter \p name.
-   */
-  const CommandLineMetadata & getCommandLineMetadata(const std::string & name) const;
-
-  /**
    * Helper for all of the addCommandLineParam() calls, which sets up _cl_data in the metadata
+   *
+   * @param name The parameter name
+   * @param syntax The parameter syntax
+   * @param required Whether or not the parameter is required
+   * @param value_required Whethre or not the parameter requires a value
    */
   template <typename T>
-  void addCommandLineParamHelper(const std::string & name, const std::string & syntax);
+  void addCommandLineParamHelper(const std::string & name,
+                                 const std::string & syntax,
+                                 const bool required,
+                                 const bool value_required);
 
   /// original location of input block (i.e. filename,linenum) - used for nice error messages.
   std::string _block_location;
@@ -1583,21 +1683,63 @@ InputParameters::setParamHelper(const std::string & /*name*/, T & l_value, const
 
 template <typename T>
 void
-InputParameters::addCommandLineParamHelper(const std::string & name, const std::string & syntax)
+InputParameters::addCommandLineParamHelper(const std::string & name,
+                                           const std::string & syntax,
+                                           const bool required,
+                                           const bool value_required)
 {
+  static_assert(isValidCommandLineType<T>::value,
+                "This type is not a supported command line parameter type. See "
+                "CommandLine::populateCommandLineParams to add it as a supported type.");
+
   auto & cl_data = at(name)._cl_data;
   cl_data = CommandLineMetadata();
-  MooseUtils::tokenize(syntax, cl_data->syntax, 1, " \t\n\v\f\r");
+
+  // Split up the syntax by whitespace
+  std::vector<std::string> syntax_split;
+  MooseUtils::tokenize(syntax, syntax_split, 1, " \t\n\v\f\r");
+
+  // Set the single syntax string as the combined syntax with removed whitespace
+  cl_data->syntax = MooseUtils::stringJoin(syntax_split);
+  mooseAssert(cl_data->syntax.size(), "Empty token");
+
+  // Set the switches; only parse those that begin with "-" as we also
+  // provide examples within the syntax
+  for (const auto & val : syntax_split)
+    if (val.rfind("-", 0) == 0)
+    {
+      if (!std::regex_search(val, std::regex("^\\-+[a-zA-Z]")))
+        mooseError("The switch '",
+                   val,
+                   "' for the command line parameter '",
+                   name,
+                   "' is invalid. It must begin with an alphabetical character.");
+
+      cl_data->switches.push_back(val);
+      libMesh::add_command_line_name(val);
+    }
+
+  cl_data->required = required;
+  cl_data->global = false;
+
+  // No arguments needed for a boolean parameter
   if constexpr (std::is_same_v<T, bool>)
+  {
+    (void)value_required; // purposely unused; doesn't take a value
     cl_data->argument_type = CommandLineMetadata::ArgumentType::NONE;
+  }
+  // MooseEnums require a value
   else if constexpr (std::is_same_v<T, MooseEnum>)
+  {
+    (void)value_required; // purposely unused; always required
     cl_data->argument_type = CommandLineMetadata::ArgumentType::REQUIRED;
+  }
+  // The user didn't specify a default, so a value is required
+  else if (value_required)
+    cl_data->argument_type = CommandLineMetadata::ArgumentType::REQUIRED;
+  // Otherwise, it's optional (user specified a default)
   else
     cl_data->argument_type = CommandLineMetadata::ArgumentType::OPTIONAL;
-
-  for (const auto & token : cl_data->syntax)
-    if (token[0] == '-')
-      libMesh::add_command_line_name(token);
 }
 
 template <typename T>
@@ -1708,8 +1850,10 @@ InputParameters::addRequiredCommandLineParam(const std::string & name,
                                              const std::string & syntax,
                                              const std::string & doc_string)
 {
+  static_assert(!std::is_same_v<T, bool>, "Cannot be used for a bool");
+
   addRequiredParam<T>(name, doc_string);
-  addCommandLineParamHelper<T>(name, syntax);
+  addCommandLineParamHelper<T>(name, syntax, /* required = */ true, /* value_required = */ true);
 }
 
 template <typename T>
@@ -1718,8 +1862,22 @@ InputParameters::addCommandLineParam(const std::string & name,
                                      const std::string & syntax,
                                      const std::string & doc_string)
 {
-  addParam<T>(name, doc_string);
-  addCommandLineParamHelper<T>(name, syntax);
+  static_assert(!std::is_same_v<T, MooseEnum>,
+                "addCommandLineParam() without a value cannot be used with a MooseEnum because a "
+                "MooseEnum requires initialization");
+
+  auto constexpr is_bool = std::is_same_v<T, bool>;
+  if constexpr (is_bool)
+  {
+    addParam<T>(name, false, doc_string);
+  }
+  else
+  {
+    addParam<T>(name, doc_string);
+  }
+
+  addCommandLineParamHelper<T>(
+      name, syntax, /* required = */ false, /* value_required = */ !is_bool);
 }
 
 template <typename T>
@@ -1729,8 +1887,25 @@ InputParameters::addCommandLineParam(const std::string & name,
                                      const T & value,
                                      const std::string & doc_string)
 {
+  if constexpr (std::is_same_v<T, bool>)
+    mooseAssert(!value, "Default for bool must be false");
+
   addParam<T>(name, value, doc_string);
-  addCommandLineParamHelper<T>(name, syntax);
+  addCommandLineParamHelper<T>(name, syntax, /* required = */ false, /* value_required = */ true);
+}
+
+template <typename T>
+void
+InputParameters::addOptionalValuedCommandLineParam(const std::string & name,
+                                                   const std::string & syntax,
+                                                   const T & value,
+                                                   const std::string & doc_string)
+{
+  mooseAssert(name == "mesh_only" || name == "recover" || name == "run",
+              "Not supported for new parameters");
+  static_assert(!std::is_same_v<T, bool>, "Cannot be used for a bool (does not take a value)");
+  addParam<T>(name, value, doc_string);
+  addCommandLineParamHelper<T>(name, syntax, /* required = */ false, /* value_required = */ false);
 }
 
 template <typename T>
@@ -1750,7 +1925,7 @@ InputParameters::checkConsistentType(const std::string & name_in) const
     mooseError("Attempting to set parameter \"",
                name,
                "\" with type (",
-               demangle(typeid(T).name()),
+               libMesh::demangle(typeid(T).name()),
                ")\nbut the parameter already exists as type (",
                it->second->type(),
                ")");
@@ -2099,7 +2274,7 @@ InputParameters::transferParam(const InputParameters & source_params,
       else
       {
         std::vector<Real> coupled_values;
-        for (const auto i : make_range(source_params.numberDefaultCoupledValues(name)))
+        for (const auto i : libMesh::make_range(source_params.numberDefaultCoupledValues(name)))
           coupled_values.push_back(source_params.defaultCoupledValue(name, i));
         addCoupledVar(p_name, coupled_values, description);
       }
