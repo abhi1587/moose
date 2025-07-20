@@ -113,6 +113,9 @@ WCNSFVFluidHeatTransferPhysicsBase::WCNSFVFluidHeatTransferPhysicsBase(
   if (isParamValid("energy_inlet_types"))
     checkVectorParamAndMultiMooseEnumLength<MooseFunctorName>("energy_inlet_functors",
                                                               "energy_inlet_types");
+  if (isParamSetByUser("energy_wall_boundaries"))
+    checkVectorParamsSameLengthIfSet<BoundaryName, MooseFunctorName>(
+        "energy_wall_boundaries", "energy_wall_functors", false);
   if (isParamValid("energy_wall_types"))
     checkVectorParamAndMultiMooseEnumLength<MooseFunctorName>("energy_wall_functors",
                                                               "energy_wall_types");
@@ -125,7 +128,10 @@ WCNSFVFluidHeatTransferPhysicsBase::addFVKernels()
   if (!_has_energy_equation)
     return;
 
-  if (isTransient())
+  if (shouldCreateTimeDerivative(_solve_for_enthalpy ? _fluid_enthalpy_name
+                                                     : _fluid_temperature_name,
+                                 _blocks,
+                                 /*error if already defined*/ false))
     addEnergyTimeKernels();
 
   addEnergyAdvectionKernels();
@@ -146,6 +152,7 @@ WCNSFVFluidHeatTransferPhysicsBase::addFVBCs()
   addEnergyInletBC();
   addEnergyWallBC();
   addEnergyOutletBC();
+  addEnergySeparatorBC();
 }
 
 void
@@ -212,9 +219,6 @@ WCNSFVFluidHeatTransferPhysicsBase::addInitialConditions()
         "initial_temperature",
         "T_fluid is defined externally of WCNSFVFluidHeatTransferPhysicsBase, so should the inital "
         "condition");
-  // do not set initial conditions if we load from file
-  if (getParam<bool>("initialize_variables_from_mesh_file"))
-    return;
   // do not set initial conditions if we are not defining variables
   if (!_define_variables)
     return;
@@ -222,15 +226,21 @@ WCNSFVFluidHeatTransferPhysicsBase::addInitialConditions()
   InputParameters params = getFactory().getValidParams("FunctionIC");
   assignBlocks(params, _blocks);
 
-  if (!_app.isRestarting() || parameters().isParamSetByUser("initial_temperature"))
+  if (shouldCreateIC(_fluid_temperature_name,
+                     _blocks,
+                     /*whether IC is a default*/ !isParamSetByUser("initial_temperature"),
+                     /*error if already an IC*/ isParamSetByUser("initial_temperature")))
   {
     params.set<VariableName>("variable") = _fluid_temperature_name;
     params.set<FunctionName>("function") = getParam<FunctionName>("initial_temperature");
 
     getProblem().addInitialCondition("FunctionIC", _fluid_temperature_name + "_ic", params);
   }
-  if ((!_app.isRestarting() && parameters().isParamValid("initial_enthalpy")) ||
-      parameters().isParamSetByUser("initial_enthalpy"))
+  if (parameters().isParamValid("initial_enthalpy") &&
+      shouldCreateIC(_fluid_enthalpy_name,
+                     _blocks,
+                     /*whether IC is a default*/ false,
+                     /*error if already an IC*/ true))
   {
     params.set<VariableName>("variable") = _fluid_enthalpy_name;
     params.set<FunctionName>("function") = getParam<FunctionName>("initial_enthalpy");
@@ -260,6 +270,17 @@ WCNSFVFluidHeatTransferPhysicsBase::addMaterials()
     params.set<MooseFunctorName>(NS::specific_enthalpy) = _fluid_enthalpy_name;
     if (isParamValid(NS::fluid))
       params.set<UserObjectName>(NS::fluid) = getParam<UserObjectName>(NS::fluid);
+    else
+    {
+      if (!getProblem().hasFunctor("h_from_p_T_functor", 0) ||
+          !getProblem().hasFunctor("T_from_p_h_functor", 0))
+        paramError(NS::fluid,
+                   "Either 'fp' must be specified or the 'h_from_p_T_functor' and "
+                   "'T_from_p_h_functor' must be defined outside the Physics");
+      // Note: we could define those in the Physics if cp is constant
+      params.set<MooseFunctorName>("h_from_p_T_functor") = "h_from_p_T_functor";
+      params.set<MooseFunctorName>("T_from_p_h_functor") = "T_from_p_h_functor";
+    }
   }
   else
   {

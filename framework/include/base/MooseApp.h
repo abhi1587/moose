@@ -147,7 +147,7 @@ public:
    * Get the parameters of the object
    * @return The parameters of the object
    */
-  InputParameters & parameters() { return _pars; }
+  const InputParameters & parameters() { return _pars; }
 
   /**
    * The RankMap is a useful object for determining how the processes
@@ -847,6 +847,11 @@ public:
   bool isUltimateMaster() const { return !_multiapp_level; }
 
   /**
+   * Returns whether to use the parent app mesh as the mesh for this app
+   */
+  bool useMasterMesh() const { return _use_master_mesh; }
+
+  /**
    * Returns a pointer to the master mesh
    */
   const MooseMesh * masterMesh() const { return _master_mesh; }
@@ -1107,6 +1112,18 @@ public:
   static void addAppParam(InputParameters & params);
   static void addInputParam(InputParameters & params);
 
+  /**
+   * Whether or not we are forcefully restarting (allowing the load of potentially
+   * incompatibie checkpoints); used within RestartableDataReader
+   */
+  bool forceRestart() const { return _force_restart; }
+
+  /// Returns whether the flag for unused parameters is set to throw a warning only
+  bool unusedFlagIsWarning() const { return _enable_unused_check == WARN_UNUSED; }
+
+  /// Returns whether the flag for unused parameters is set to throw an error
+  bool unusedFlagIsError() const { return _enable_unused_check == ERROR_UNUSED; }
+
 protected:
   /**
    * Helper method for dynamic loading of objects
@@ -1122,7 +1139,7 @@ protected:
                                   bool load_dependencies = true);
 
   /// Constructor is protected so that this object is constructed through the AppFactory object
-  MooseApp(InputParameters parameters);
+  MooseApp(const InputParameters & parameters);
 
   /**
    * NOTE: This is an internal function meant for MOOSE use only!
@@ -1159,7 +1176,7 @@ protected:
   //@}
 
   /// Parameters of this object
-  InputParameters _pars;
+  const InputParameters & _pars;
 
   /// The string representation of the type of this object as registered (see registerApp(AppName))
   const std::string _type;
@@ -1303,6 +1320,9 @@ protected:
 
   /// Whether or not we are using a (pre-)split mesh (automatically DistributedMesh)
   const bool _use_split;
+
+  /// Whether or not we are forcefully attempting to load checkpoints (--force-restart)
+  const bool _force_restart;
 
   /// Whether or not FPE trapping should be turned on.
   bool _trap_fpe;
@@ -1482,6 +1502,9 @@ private:
 
   /// Numbering in all the sub-apps on the same level
   unsigned int _multiapp_number;
+
+  /// Whether to use the parent app mesh for this app
+  const bool _use_master_mesh;
 
   /// The mesh from master app
   const MooseMesh * const _master_mesh;

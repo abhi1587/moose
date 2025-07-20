@@ -615,11 +615,15 @@ class ApptainerGenerator:
                 jinja_data[jinja_var] = source[var]
 
         # Set petsc and libmesh versions
-        need_versions = {'petsc': {'package': 'petsc', 'submodule': 'petsc'},
-                         'libmesh': {'package': 'libmesh', 'submodule': 'libmesh'},
-                         'moose-dev': {'package': 'wasp', 'submodule': 'framework/contrib/wasp'}}
-        for library, package_info in need_versions.items():
-            if library == self.args.library:
+        need_versions = {'petsc': [{'package': 'petsc', 'submodule': 'petsc'}],
+                         'libmesh': [{'package': 'libmesh', 'submodule': 'libmesh'}],
+                         'moose-dev': [{'package': 'conduit', 'submodule': 'framework/contrib/conduit'},
+                                       {'package': 'mfem', 'submodule': 'framework/contrib/mfem'},
+                                       {'package': 'neml2', 'submodule': 'framework/contrib/neml2'},
+                                       {'package': 'wasp', 'submodule': 'framework/contrib/wasp'}]}
+        needed = need_versions.get(self.args.library)
+        if needed is not None:
+            for package_info in needed:
                 package = package_info['package']
                 submodule = package_info['submodule']
 
@@ -709,6 +713,9 @@ class ApptainerGenerator:
                 apptainer_bootstrap, apptainer_from = self._dependency_from(dep_package)
             jinja_data['APPTAINER_BOOTSTRAP'] = apptainer_bootstrap
             jinja_data['APPTAINER_FROM'] = apptainer_from
+            # Don't require fingerprints if overriding a dependency
+            if self.args.dep or self.args.local:
+                jinja_data['SKIP_FINGERPRINTS'] = '1'
 
         # Add extra conditional vars
         self.add_definition_vars(jinja_data)

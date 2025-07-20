@@ -97,9 +97,12 @@ ElementGenerator::generate()
   {
     for (unsigned int j = 0; j < n; j++)
     {
-      elem->set_node(j) = nodes[_element_connectivity[j + i]];
+      elem->set_node(j, nodes[_element_connectivity[j + i]]);
     }
   }
+
+  // We just added an element
+  mesh->set_isnt_prepared();
 
   if (getParam<bool>("create_sidesets"))
     for (const auto i_side : make_range(elem->n_sides()))

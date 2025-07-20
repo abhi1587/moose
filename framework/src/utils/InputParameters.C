@@ -801,9 +801,10 @@ InputParameters::hasDefaultCoupledValue(const std::string & coupling_name) const
 void
 InputParameters::defaultCoupledValue(const std::string & coupling_name, Real value, unsigned int i)
 {
-  _params[coupling_name]._coupled_default.resize(i + 1);
-  _params[coupling_name]._coupled_default[i] = value;
-  _params[coupling_name]._have_coupled_default = true;
+  const auto actual_name = checkForRename(coupling_name);
+  _params[actual_name]._coupled_default.resize(i + 1);
+  _params[actual_name]._coupled_default[i] = value;
+  _params[actual_name]._have_coupled_default = true;
 }
 
 Real
@@ -1156,6 +1157,10 @@ InputParameters::applyParameter(const InputParameters & common,
     // the parameter in the action
     at(local_name)._hit_node = common.getHitNode(common_name);
   }
+  else if (!local_exist && !common_exist)
+    mooseError("InputParameters::applyParameter(): Attempted to apply invalid parameter \"",
+               common_name,
+               "\"");
 
   // Enable deprecated message printing
   _show_deprecated_message = true;
@@ -1184,6 +1189,13 @@ InputParameters::isParamSetByUser(const std::string & name_in) const
     return cl_data->set_by_command_line;
   // Not a command line option, not set by addParam and not private
   return !_params.at(name)._set_by_add_param && !_params.at(name)._is_private;
+}
+
+bool
+InputParameters::isParamDefined(const std::string & name_in) const
+{
+  const auto name = checkForRename(name_in);
+  return _params.count(name) > 0;
 }
 
 const std::string &
@@ -1346,14 +1358,6 @@ InputParameters::addDeprecatedParam<std::vector<MooseEnum>>(
 {
   mooseError("You must supply a vector of MooseEnum object(s) and the deprecation string when "
              "using addDeprecatedParam, even if the parameter is not required!");
-}
-
-std::string
-InputParameters::appendFunctorDescription(const std::string & doc_string) const
-{
-  return MooseUtils::trim(doc_string, ". ") +
-         ". A functor is any of the following: a variable, a functor material property, a "
-         "function, a post-processor, or a number.";
 }
 
 template <>

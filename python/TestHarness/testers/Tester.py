@@ -7,12 +7,15 @@
 #* Licensed under LGPL 2.1, please see LICENSE for details
 #* https://www.gnu.org/licenses/lgpl-2.1.html
 
-import re, os, sys, shutil
+import re, os, sys, shutil, json, importlib.util, inspect
 import mooseutils
 from TestHarness import OutputInterface, util
 from TestHarness.StatusSystem import StatusSystem
+from TestHarness.validation import ValidationCase, ValidationCaseClasses
 from FactorySystem.MooseObject import MooseObject
+from FactorySystem.InputParameters import InputParameters
 from pathlib import Path
+from dataclasses import dataclass
 
 class Tester(MooseObject, OutputInterface):
     """
@@ -89,7 +92,6 @@ class Tester(MooseObject, OutputInterface):
         params.addParam('env_vars_not_set', [], "A test that only runs if all the environment variables listed are not set")
         params.addParam('should_execute', True, 'Whether or not the executable needs to be run.  Use this to chain together multiple tests based off of one executeable invocation')
         params.addParam('required_submodule', [], "A list of initialized submodules for which this test requires.")
-        params.addParam('required_objects', [], "A list of required objects that are in the executable.")
         params.addParam('required_applications', [], "A list of required registered applications that are in the executable.")
         params.addParam('check_input',    False, "Check for correct input file syntax")
         params.addParam('display_required', False, "The test requires and active display for rendering (i.e., ImageDiff tests).")
@@ -111,12 +113,80 @@ class Tester(MooseObject, OutputInterface):
         params.addParam("collections", [], "A means for defining a collection of tests for SQA process.")
         params.addParam("classification", 'functional', "A means for defining a requirement classification for SQA process.")
 
+        # HPC
         params.addParam('hpc', True, 'Set to false to not run with HPC schedulers (PBS and slurm)')
+        params.addParam('hpc_mem_per_cpu', "Memory requirement per CPU to use for HPC submission")
+
+        params.addParam("validation_test", None, "List of validation scripts to run with this test")
+
+        return params
+
+    @staticmethod
+    def augmentParams(params):
+        # Augment our parameters with parameters from the validation test, if we
+        # have any validation tests
+        script = params['validation_test']
+        validation_classes = []
+        if script:
+            # Sanity checks
+            if '..' in script:
+                message = f'validation_test={script} out of test directory'
+                raise ValueError(message)
+            path = os.path.abspath(script)
+            if not os.path.exists(script):
+                message = f'validation_test={path} not found'
+                raise FileNotFoundError(message)
+
+            # Load the script; throw an exception here if it fails
+            # so that the Parser can report a reasonable error
+            spec = importlib.util.spec_from_file_location('validation_load', path)
+            module = importlib.util.module_from_spec(spec)
+            try:
+                spec.loader.exec_module(module)
+            except Exception as e:
+                raise ImportError(f'In validation_test={path}:\n{e}')
+
+            # Find the classes that are derived from the base validation
+            # classes in the module (the user's python script)
+            module_classes = inspect.getmembers(module, inspect.isclass)
+            base_classes = [c[1] for c in module_classes if c[1] in ValidationCaseClasses]
+            other_classes = [c[1] for c in module_classes if c[1] not in base_classes]
+            subclasses = [c for c in other_classes if issubclass(c, ValidationCase)]
+
+            # Store each of the classes in the script that derives from
+            # ValidationCase, and add their parameters to this Tester's
+            # parameters
+            validation_classes = []
+            validation_params = InputParameters()
+            for subclass in subclasses:
+                validation_params = subclass.validParams()
+
+                # Don't allow validation parameters that override
+                # parameters from the Tester
+                for key in validation_params.keys():
+                    if key in params:
+                        raise Exception(f'Duplicate parameter "{key}" from validation test')
+
+                # Collect the cumulative validation params
+                validation_params += subclass.validParams()
+                # Store the class so that it can be used later
+                validation_classes.append(subclass)
+
+            # Extend the Tester parameters
+            params += validation_params
+
+        # Store the classes that are used in validation so that they
+        # can be constructed within the Job at a later time
+        params.addPrivateParam('_validation_classes', validation_classes)
 
         return params
 
     # This is what will be checked for when we look for valid testers
     IS_TESTER = True
+
+    @dataclass
+    class JSONMetadata:
+        path: os.PathLike
 
     def __init__(self, name, params):
         MooseObject.__init__(self, name, params)
@@ -164,6 +234,11 @@ class Tester(MooseObject, OutputInterface):
         # depending on the runner which might inject something
         self.command_ran = None
 
+        # Paths to additional JSON metadata that can be collected
+        self.json_metadata: dict[str, Tester.JSONMetadata] = {}
+
+        self._validation_classes = self.parameters()['_validation_classes']
+
     def getStatus(self):
         return self.test_status.getStatus()
 
@@ -205,20 +280,21 @@ class Tester(MooseObject, OutputInterface):
         test_dir_entry, test_entry = self.getResultsEntry(options, False, True)
         status = (self.test_status.createStatus(), '', '')
         if test_entry:
-            status = (self.test_status.createStatus(str(test_entry['status'])),
-                      str(test_entry['status_message']),
-                      test_entry['caveats'])
+            status_entry = test_entry['status']
+            status = (self.test_status.createStatus(str(status_entry['status'])),
+                      str(status_entry['status_message']),
+                      status_entry['caveats'])
         return (status)
 
     def getResults(self, options) -> dict:
         """Get the results dict for this Tester"""
-        output_files = []
-        for file in self.getOutputFiles(options):
-            output_files.append(os.path.join(self.getTestDir(), file))
+        output_files = [os.path.join(self.getTestDir(), file) for file in self.getOutputFiles(options)]
+        json_metadata = {k: os.path.join(self.getTestDir(), v.path) if v else None for k, v in self.json_metadata.items()}
         return {'name': self.__class__.__name__,
                 'command': self.getCommand(options),
                 'input_file': self.getInputFile(),
-                'output_files': output_files}
+                'output_files': output_files,
+                'json_metadata': json_metadata}
 
     def getStatusMessage(self):
         return self.__tester_message
@@ -250,6 +326,10 @@ class Tester(MooseObject, OutputInterface):
     def getTestNameShort(self):
         """ return test short name (not including the path) """
         return self.specs['test_name_short']
+
+    def getTestNameForFile(self):
+        """ return test short name for file creation ('/' to '.')"""
+        return self.getTestNameShort().replace(os.sep, '.')
 
     def appendTestName(self, value):
         """
@@ -304,7 +384,7 @@ class Tester(MooseObject, OutputInterface):
 
     def getUniqueTestID(self):
         """ return unique hash for test """
-        return self.specs['unique_test_id']
+        return self.specs['unique_test_id'] if self.specs.isValid('unique_test_id') else None
 
     def getRunnable(self, options):
         """ return bool and cache results, if this test can run """
@@ -322,7 +402,7 @@ class Tester(MooseObject, OutputInterface):
 
     def getOutputFiles(self, options):
         """ return the output files if applicable to this Tester """
-        return []
+        return [v.path for v in self.json_metadata.values()]
 
     def getCheckInput(self):
         return self.check_input
@@ -679,14 +759,6 @@ class Tester(MooseObject, OutputInterface):
             if not os.path.isfile(os.path.join(self.specs['base_dir'], file)):
                 reasons['depend_files'] = 'DEPEND FILES'
 
-        # Check to see if we have the required object names
-        if self.specs['required_objects'] and options._app_objects is None:
-            raise Exception('Cannot used required_objects; app objects not available')
-        for var in self.specs['required_objects']:
-            if var not in options._app_objects:
-                reasons['required_objects'] = '%s not found in executable' % var
-                break
-
         # We extract the registered apps only if we need them
         if self.specs["required_applications"] and checks["registered_apps"] is None:
             checks["registered_apps"] = util.getRegisteredApps(self.specs["executable"],
@@ -811,6 +883,32 @@ class Tester(MooseObject, OutputInterface):
 
     def run(self, options, exit_code, runner_output):
         output = self.processResults(self.getMooseDir(), options, exit_code, runner_output)
+        if output:
+            output = output.rstrip() + '\n\n'
+
+        # Check existance of metadata
+        if not self.isSkip() and self.json_metadata:
+            output += 'Checking JSON metadata...\n'
+            if exit_code == 0:
+                for key, entry in self.json_metadata.items():
+                    path = os.path.join(self.getTestDir(), entry.path)
+                    prefix = f'  {key} ({path}): '
+                    if os.path.isfile(path):
+                        try:
+                            with open(path, 'r') as f:
+                                result = json.load(f)
+                                del result
+                        except:
+                            output += f'{prefix}cannot be loaded\n'
+                            self.setStatus(self.fail, 'BAD METADATA')
+                        else:
+                            output += f'{prefix}exists and is valid\n'
+                    else:
+                        output += f'{prefix}does not exist\n'
+                        self.setStatus(self.fail, 'MISSING METADATA')
+            else:
+                output += '  Not checking due to non-zero exit code\n'
+            output += '\n'
 
         # If the tester requested to be skipped at the last minute, report that.
         if self.isSkip():

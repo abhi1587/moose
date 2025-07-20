@@ -68,8 +68,9 @@ SubChannel1PhaseProblem::validParams()
   params.addParam<PetscReal>("atol", 1e-6, "Absolute tolerance for ksp solver");
   params.addParam<PetscReal>("dtol", 1e5, "Divergence tolerance or ksp solver");
   params.addParam<PetscInt>("maxit", 1e4, "Maximum number of iterations for ksp solver");
-  params.addParam<MooseEnum>(
-      "interpolation_scheme", schemes, "Interpolation scheme used for the method.");
+  params.addParam<MooseEnum>("interpolation_scheme",
+                             schemes,
+                             "Interpolation scheme used for the method. Default is exponential");
   params.addParam<bool>(
       "implicit", false, "Boolean to define the use of explicit or implicit solution.");
   params.addParam<bool>(
@@ -212,7 +213,6 @@ SubChannel1PhaseProblem::SubChannel1PhaseProblem(const InputParameters & params)
   LibmeshPetscCall(
       createPetscMatrix(_cmc_sys_Wij_mat, _block_size * _n_gaps, _block_size * _n_gaps));
   LibmeshPetscCall(createPetscVector(_cmc_sys_Wij_rhs, _block_size * _n_gaps));
-  LibmeshPetscCall(createPetscVector(_cmc_Wij_channel_dummy, _block_size * _n_channels));
 
   // Energy conservation components
   LibmeshPetscCall(createPetscMatrix(
@@ -316,7 +316,6 @@ SubChannel1PhaseProblem::cleanUp()
   LibmeshPetscCall(VecDestroy(&_cmc_pressure_force_rhs));
   LibmeshPetscCall(MatDestroy(&_cmc_sys_Wij_mat));
   LibmeshPetscCall(VecDestroy(&_cmc_sys_Wij_rhs));
-  LibmeshPetscCall(VecDestroy(&_cmc_Wij_channel_dummy));
 
   // Energy conservation components
   LibmeshPetscCall(MatDestroy(&_hc_time_derivative_mat));
@@ -341,27 +340,20 @@ SubChannel1PhaseProblem::solverSystemConverged(const unsigned int)
 PetscScalar
 SubChannel1PhaseProblem::computeInterpolationCoefficients(PetscScalar Peclet)
 {
-  if (_interpolation_scheme == "upwind")
+  switch (_interpolation_scheme)
   {
-    return 1.0;
-  }
-  else if (_interpolation_scheme == "downwind")
-  {
-    return 0.0;
-  }
-  else if (_interpolation_scheme == "central_difference")
-  {
-    return 0.5;
-  }
-  else if (_interpolation_scheme == "exponential")
-  {
-    return ((Peclet - 1.0) * std::exp(Peclet) + 1) / (Peclet * (std::exp(Peclet) - 1.) + 1e-10);
-  }
-  else
-  {
-    mooseError(name(),
-               ": Interpolation scheme should be a string: upwind, downwind, central_difference, "
-               "exponential");
+    case 0: // upwind interpolation
+      return 1.0;
+    case 1: // downwind interpolation
+      return 0.0;
+    case 2: // central_difference interpolation
+      return 0.5;
+    case 3: // exponential interpolation (Peclet limited)
+      return ((Peclet - 1.0) * std::exp(Peclet) + 1) / (Peclet * (std::exp(Peclet) - 1.) + 1e-10);
+    default:
+      mooseError(name(),
+                 ": Interpolation scheme should be a string: upwind, downwind, central_difference, "
+                 "exponential");
   }
 }
 
@@ -372,98 +364,6 @@ SubChannel1PhaseProblem::computeInterpolatedValue(PetscScalar topValue,
 {
   PetscScalar alpha = computeInterpolationCoefficients(Peclet);
   return alpha * botValue + (1.0 - alpha) * topValue;
-}
-
-PetscErrorCode
-SubChannel1PhaseProblem::createPetscVector(Vec & v, PetscInt n)
-{
-  PetscFunctionBegin;
-  LibmeshPetscCall(VecCreate(PETSC_COMM_WORLD, &v));
-  LibmeshPetscCall(PetscObjectSetName((PetscObject)v, "Solution"));
-  LibmeshPetscCall(VecSetSizes(v, PETSC_DECIDE, n));
-  LibmeshPetscCall(VecSetFromOptions(v));
-  LibmeshPetscCall(VecZeroEntries(v));
-  PetscFunctionReturn(LIBMESH_PETSC_SUCCESS);
-}
-
-PetscErrorCode
-SubChannel1PhaseProblem::createPetscMatrix(Mat & M, PetscInt n, PetscInt m)
-{
-  PetscFunctionBegin;
-  LibmeshPetscCall(MatCreate(PETSC_COMM_WORLD, &M));
-  LibmeshPetscCall(MatSetSizes(M, PETSC_DECIDE, PETSC_DECIDE, n, m));
-  LibmeshPetscCall(MatSetFromOptions(M));
-  LibmeshPetscCall(MatSetUp(M));
-  PetscFunctionReturn(LIBMESH_PETSC_SUCCESS);
-}
-
-template <class T>
-PetscErrorCode
-SubChannel1PhaseProblem::populateVectorFromDense(Vec & x,
-                                                 const T & loc_solution,
-                                                 const unsigned int first_axial_level,
-                                                 const unsigned int last_axial_level,
-                                                 const unsigned int cross_dimension)
-{
-  PetscScalar * xx;
-  PetscFunctionBegin;
-  LibmeshPetscCall(VecGetArray(x, &xx));
-  for (unsigned int iz = first_axial_level; iz < last_axial_level; iz++)
-  {
-    unsigned int iz_ind = iz - first_axial_level;
-    for (unsigned int i_l = 0; i_l < cross_dimension; i_l++)
-    {
-      xx[iz_ind * cross_dimension + i_l] = loc_solution(i_l, iz);
-    }
-  }
-  LibmeshPetscCall(VecRestoreArray(x, &xx));
-  PetscFunctionReturn(LIBMESH_PETSC_SUCCESS);
-}
-
-template <class T>
-PetscErrorCode
-SubChannel1PhaseProblem::populateSolutionChan(const Vec & x,
-                                              T & loc_solution,
-                                              const unsigned int first_axial_level,
-                                              const unsigned int last_axial_level,
-                                              const unsigned int cross_dimension)
-{
-  PetscScalar * xx;
-  PetscFunctionBegin;
-  LibmeshPetscCall(VecGetArray(x, &xx));
-  Node * loc_node;
-  for (unsigned int iz = first_axial_level; iz < last_axial_level + 1; iz++)
-  {
-    unsigned int iz_ind = iz - first_axial_level;
-    for (unsigned int i_l = 0; i_l < cross_dimension; i_l++)
-    {
-      loc_node = _subchannel_mesh.getChannelNode(i_l, iz);
-      loc_solution.set(loc_node, xx[iz_ind * cross_dimension + i_l]);
-    }
-  }
-  PetscFunctionReturn(LIBMESH_PETSC_SUCCESS);
-}
-template <class T>
-
-PetscErrorCode
-SubChannel1PhaseProblem::populateSolutionGap(const Vec & x,
-                                             T & loc_solution,
-                                             const unsigned int first_axial_level,
-                                             const unsigned int last_axial_level,
-                                             const unsigned int cross_dimension)
-{
-  PetscScalar * xx;
-  PetscFunctionBegin;
-  LibmeshPetscCall(VecGetArray(x, &xx));
-  for (unsigned int iz = first_axial_level; iz < last_axial_level + 1; iz++)
-  {
-    unsigned int iz_ind = iz - first_axial_level;
-    for (unsigned int i_l = 0; i_l < cross_dimension; i_l++)
-    {
-      loc_solution(iz * cross_dimension + i_l) = xx[iz_ind * cross_dimension + i_l];
-    }
-  }
-  PetscFunctionReturn(LIBMESH_PETSC_SUCCESS);
 }
 
 void
@@ -651,8 +551,6 @@ SubChannel1PhaseProblem::computeMdot(int iblock)
     }
     LibmeshPetscCall(MatAssemblyBegin(_mc_axial_convection_mat, MAT_FINAL_ASSEMBLY));
     LibmeshPetscCall(MatAssemblyEnd(_mc_axial_convection_mat, MAT_FINAL_ASSEMBLY));
-    if (_verbose_subchannel)
-      _console << "Block: " << iblock << " - Mass conservation matrix assembled" << std::endl;
 
     if (_segregated_bool)
     {
@@ -742,9 +640,14 @@ SubChannel1PhaseProblem::computeDP(int iblock)
         _friction_args.S = S;
         _friction_args.w_perim = w_perim;
         auto fi = computeFrictionFactor(_friction_args);
-        auto ki = k_grid[i_ch][iz - 1];
+        /// Upwind local form loss
+        auto ki = 0.0;
+        if ((*_mdot_soln)(node_out) >= 0)
+          ki = k_grid[i_ch][iz - 1];
+        else
+          ki = k_grid[i_ch][iz];
         auto friction_term = (fi * dz / Dh_i + ki) * 0.5 *
-                             (std::pow((*_mdot_soln)(node_out), 2.0)) /
+                             (*_mdot_soln)(node_out)*std::abs((*_mdot_soln)(node_out)) /
                              (S * (*_rho_soln)(node_out));
         auto gravity_term = _g_grav * (*_rho_soln)(node_out)*dz * S;
         auto DP = std::pow(S, -1.0) * (time_term + mass_term1 + mass_term2 + crossflow_term +
@@ -779,7 +682,7 @@ SubChannel1PhaseProblem::computeDP(int iblock)
 
         // interpolation weight coefficient
         PetscScalar Pe = 0.5;
-        if (_interpolation_scheme == "exponential")
+        if (_interpolation_scheme == 3)
         {
           // Compute the Peclet number
           auto S_in = (*_S_flow_soln)(node_in);
@@ -801,7 +704,12 @@ SubChannel1PhaseProblem::computeDP(int iblock)
           _friction_args.S = S_interp;
           _friction_args.w_perim = w_perim_interp;
           auto fi = computeFrictionFactor(_friction_args);
-          auto ki = computeInterpolatedValue(k_grid[i_ch][iz], k_grid[i_ch][iz - 1], 0.5);
+          /// Upwind local form loss
+          auto ki = 0.0;
+          if ((*_mdot_soln)(node_out) >= 0)
+            ki = k_grid[i_ch][iz - 1];
+          else
+            ki = k_grid[i_ch][iz];
           Pe = 1.0 / ((fi * dz / Dh_i + ki) * 0.5) * mdot_loc / std::abs(mdot_loc);
         }
         auto alpha = computeInterpolationCoefficients(Pe);
@@ -1034,7 +942,12 @@ SubChannel1PhaseProblem::computeDP(int iblock)
         _friction_args.S = S_interp;
         _friction_args.w_perim = w_perim_interp;
         auto fi = computeFrictionFactor(_friction_args);
-        auto ki = computeInterpolatedValue(k_grid[i_ch][iz], k_grid[i_ch][iz - 1], Pe);
+        /// Upwind local form loss
+        auto ki = 0.0;
+        if ((*_mdot_soln)(node_out) >= 0)
+          ki = k_grid[i_ch][iz - 1];
+        else
+          ki = k_grid[i_ch][iz];
         auto coef = (fi * dz / Dh_i + ki) * 0.5 * std::abs((*_mdot_soln)(node_out)) /
                     (S_interp * rho_interp);
         if (iz == first_node)
@@ -1113,9 +1026,6 @@ SubChannel1PhaseProblem::computeDP(int iblock)
 #endif
     LibmeshPetscCall(MatAssemblyBegin(_amc_sys_mdot_mat, MAT_FINAL_ASSEMBLY));
     LibmeshPetscCall(MatAssemblyEnd(_amc_sys_mdot_mat, MAT_FINAL_ASSEMBLY));
-    if (_verbose_subchannel)
-      _console << "Block: " << iblock << " - Linear momentum conservation matrix assembled"
-               << std::endl;
     // RHS
     LibmeshPetscCall(VecAXPY(_amc_sys_mdot_rhs, 1.0, _amc_time_derivative_rhs));
     LibmeshPetscCall(VecAXPY(_amc_sys_mdot_rhs, 1.0, _amc_advective_derivative_rhs));
@@ -1488,7 +1398,7 @@ SubChannel1PhaseProblem::computeMu(int iblock)
 }
 
 void
-SubChannel1PhaseProblem::computeWij(int iblock)
+SubChannel1PhaseProblem::computeWijResidual(int iblock)
 {
   // Cross flow residual
   if (!_implicit_bool)
@@ -1770,11 +1680,6 @@ SubChannel1PhaseProblem::computeWij(int iblock)
 #endif
     LibmeshPetscCall(MatAssemblyBegin(_cmc_sys_Wij_mat, MAT_FINAL_ASSEMBLY));
     LibmeshPetscCall(MatAssemblyEnd(_cmc_sys_Wij_mat, MAT_FINAL_ASSEMBLY));
-    if (_verbose_subchannel)
-      _console << "Block: " << iblock << " - Cross flow system matrix assembled" << std::endl;
-    if (_verbose_subchannel)
-      _console << "Block: " << iblock << " - Cross flow pressure force matrix assembled"
-               << std::endl;
     // RHS
     LibmeshPetscCall(VecAXPY(_cmc_sys_Wij_rhs, 1.0, _cmc_time_derivative_rhs));
     LibmeshPetscCall(VecAXPY(_cmc_sys_Wij_rhs, 1.0, _cmc_advective_derivative_rhs));
@@ -1787,12 +1692,8 @@ SubChannel1PhaseProblem::computeWij(int iblock)
       LibmeshPetscCall(createPetscVector(sol_holder_P, _block_size * _n_gaps));
       Vec sol_holder_W;
       LibmeshPetscCall(createPetscVector(sol_holder_W, _block_size * _n_gaps));
-      Vec loc_holder_Wij;
-      LibmeshPetscCall(createPetscVector(loc_holder_Wij, _block_size * _n_gaps));
       LibmeshPetscCall(populateVectorFromHandle<SolutionHandle>(
           _prodp, *_P_soln, iblock * _block_size, (iblock + 1) * _block_size - 1, _n_channels));
-      LibmeshPetscCall(populateVectorFromDense<libMesh::DenseMatrix<Real>>(
-          loc_holder_Wij, _Wij, first_node, last_node, _n_gaps));
       LibmeshPetscCall(MatMult(_cmc_sys_Wij_mat, _Wij_vec, sol_holder_W));
       LibmeshPetscCall(VecAXPY(sol_holder_W, -1.0, _cmc_sys_Wij_rhs));
       LibmeshPetscCall(MatMult(_cmc_pressure_force_mat, _prodp, sol_holder_P));
@@ -1810,8 +1711,103 @@ SubChannel1PhaseProblem::computeWij(int iblock)
       }
       LibmeshPetscCall(VecDestroy(&sol_holder_P));
       LibmeshPetscCall(VecDestroy(&sol_holder_W));
-      LibmeshPetscCall(VecDestroy(&loc_holder_Wij));
     }
+  }
+}
+
+void
+SubChannel1PhaseProblem::computeWijPrime(int iblock)
+{
+  unsigned int last_node = (iblock + 1) * _block_size;
+  unsigned int first_node = iblock * _block_size + 1;
+  for (unsigned int iz = first_node; iz < last_node + 1; iz++)
+  {
+    auto dz = _z_grid[iz] - _z_grid[iz - 1];
+    for (unsigned int i_gap = 0; i_gap < _n_gaps; i_gap++)
+    {
+      auto chans = _subchannel_mesh.getGapChannels(i_gap);
+      unsigned int i_ch = chans.first;
+      unsigned int j_ch = chans.second;
+      auto * node_in_i = _subchannel_mesh.getChannelNode(i_ch, iz - 1);
+      auto * node_out_i = _subchannel_mesh.getChannelNode(i_ch, iz);
+      auto * node_in_j = _subchannel_mesh.getChannelNode(j_ch, iz - 1);
+      auto * node_out_j = _subchannel_mesh.getChannelNode(j_ch, iz);
+      auto Si_in = (*_S_flow_soln)(node_in_i);
+      auto Sj_in = (*_S_flow_soln)(node_in_j);
+      auto Si_out = (*_S_flow_soln)(node_out_i);
+      auto Sj_out = (*_S_flow_soln)(node_out_j);
+      auto gap = _subchannel_mesh.getGapWidth(iz, i_gap);
+      auto Sij = dz * gap;
+      auto avg_massflux =
+          0.5 * (((*_mdot_soln)(node_in_i) + (*_mdot_soln)(node_in_j)) / (Si_in + Sj_in) +
+                 ((*_mdot_soln)(node_out_i) + (*_mdot_soln)(node_out_j)) / (Si_out + Sj_out));
+      auto beta = computeBeta(i_gap, iz);
+
+      if (!_implicit_bool)
+      {
+        _WijPrime(i_gap, iz) = beta * avg_massflux * Sij;
+      }
+      else
+      {
+        auto iz_ind = iz - first_node;
+        PetscScalar base_value = beta * 0.5 * Sij;
+
+        // Bottom values
+        if (iz == first_node)
+        {
+          PetscScalar value_tl = -1.0 * base_value / (Si_in + Sj_in) *
+                                 ((*_mdot_soln)(node_in_i) + (*_mdot_soln)(node_in_j));
+          PetscInt row = i_gap + _n_gaps * iz_ind;
+          LibmeshPetscCall(
+              VecSetValues(_amc_turbulent_cross_flows_rhs, 1, &row, &value_tl, INSERT_VALUES));
+        }
+        else
+        {
+          PetscScalar value_tl = base_value / (Si_in + Sj_in);
+          PetscInt row = i_gap + _n_gaps * iz_ind;
+
+          PetscInt col_ich = i_ch + _n_channels * (iz_ind - 1);
+          LibmeshPetscCall(MatSetValues(
+              _amc_turbulent_cross_flows_mat, 1, &row, 1, &col_ich, &value_tl, INSERT_VALUES));
+
+          PetscInt col_jch = j_ch + _n_channels * (iz_ind - 1);
+          LibmeshPetscCall(MatSetValues(
+              _amc_turbulent_cross_flows_mat, 1, &row, 1, &col_jch, &value_tl, INSERT_VALUES));
+        }
+
+        // Top values
+        PetscScalar value_bl = base_value / (Si_out + Sj_out);
+        PetscInt row = i_gap + _n_gaps * iz_ind;
+
+        PetscInt col_ich = i_ch + _n_channels * iz_ind;
+        LibmeshPetscCall(MatSetValues(
+            _amc_turbulent_cross_flows_mat, 1, &row, 1, &col_ich, &value_bl, INSERT_VALUES));
+
+        PetscInt col_jch = j_ch + _n_channels * iz_ind;
+        LibmeshPetscCall(MatSetValues(
+            _amc_turbulent_cross_flows_mat, 1, &row, 1, &col_jch, &value_bl, INSERT_VALUES));
+      }
+    }
+  }
+
+  if (_implicit_bool)
+  {
+    LibmeshPetscCall(MatAssemblyBegin(_amc_turbulent_cross_flows_mat, MAT_FINAL_ASSEMBLY));
+    LibmeshPetscCall(MatAssemblyEnd(_amc_turbulent_cross_flows_mat, MAT_FINAL_ASSEMBLY));
+
+    /// Update turbulent crossflow
+    Vec loc_prod;
+    Vec loc_Wij;
+    LibmeshPetscCall(VecDuplicate(_amc_sys_mdot_rhs, &loc_prod));
+    LibmeshPetscCall(VecDuplicate(_Wij_vec, &loc_Wij));
+    LibmeshPetscCall(populateVectorFromHandle<SolutionHandle>(
+        loc_prod, *_mdot_soln, first_node, last_node, _n_channels));
+    LibmeshPetscCall(MatMult(_amc_turbulent_cross_flows_mat, loc_prod, loc_Wij));
+    LibmeshPetscCall(VecAXPY(loc_Wij, -1.0, _amc_turbulent_cross_flows_rhs));
+    LibmeshPetscCall(populateDenseFromVector<libMesh::DenseMatrix<Real>>(
+        loc_Wij, _WijPrime, first_node, last_node, _n_gaps));
+    LibmeshPetscCall(VecDestroy(&loc_prod));
+    LibmeshPetscCall(VecDestroy(&loc_Wij));
   }
 }
 
@@ -1842,8 +1838,8 @@ SubChannel1PhaseProblem::residualFunction(int iblock, libMesh::DenseVector<Real>
   computeDP(iblock);
   // Solving for pressure
   computeP(iblock);
-  // Solving cross fluxes
-  computeWij(iblock);
+  // Populating lateral crossflow residual matrix
+  computeWijResidual(iblock);
 
   // Turn the residual matrix into a residual vector
   for (unsigned int iz = 0; iz < _block_size; iz++)
@@ -1945,7 +1941,7 @@ SubChannel1PhaseProblem::implicitPetscSolve(int iblock)
   // Assembling pressure matrix
   computeP(iblock);
   // Assembling cross fluxes matrix
-  computeWij(iblock);
+  computeWijResidual(iblock);
   // If monolithic solve - Assembling enthalpy matrix
   if (_monolithic_thermal_bool)
     computeh(iblock);
@@ -2641,13 +2637,13 @@ SubChannel1PhaseProblem::externalSolve()
     {
       for (unsigned int iz = 0; iz < _n_cells + 1; ++iz)
       {
-        auto * pin_node = _subchannel_mesh.getPinNode(i_pin, iz);
+        const auto * pin_node = _subchannel_mesh.getPinNode(i_pin, iz);
         Real sumTemp = 0.0;
         Real rod_counter = 0.0;
         // Calculate sum of pin surface temperatures that the channels around the pin see
         for (auto i_ch : _subchannel_mesh.getPinChannels(i_pin))
         {
-          auto * node = _subchannel_mesh.getChannelNode(i_ch, iz);
+          const auto * node = _subchannel_mesh.getChannelNode(i_ch, iz);
           auto mu = (*_mu_soln)(node);
           auto S = (*_S_flow_soln)(node);
           auto w_perim = (*_w_perim_soln)(node);
@@ -2658,11 +2654,17 @@ SubChannel1PhaseProblem::externalSolve()
           auto Pr = (*_mu_soln)(node)*cp / k;
           auto Nu = 0.023 * std::pow(Re, 0.8) * std::pow(Pr, 0.4);
           auto hw = Nu * k / Dh_i;
+          if ((*_Dpin_soln)(pin_node) <= 0)
+            mooseError("Dpin should not be null or negative when computing pin powers: ",
+                       (*_Dpin_soln)(pin_node));
           sumTemp +=
               (*_q_prime_soln)(pin_node) / ((*_Dpin_soln)(pin_node)*M_PI * hw) + (*_T_soln)(node);
           rod_counter += 1.0;
         }
-        _Tpin_soln->set(pin_node, sumTemp / rod_counter);
+        if (rod_counter > 0)
+          _Tpin_soln->set(pin_node, sumTemp / rod_counter);
+        else
+          mooseError("Pin was not found for pin index:  " + std::to_string(i_pin));
       }
     }
   }
@@ -2731,9 +2733,14 @@ SubChannel1PhaseProblem::externalSolve()
     _console << "User defined outlet pressure is : " << _P_out << " Pa" << std::endl;
     _console << " ======================================= " << std::endl;
   }
-}
-void
 
+  if (MooseUtils::absoluteFuzzyLessEqual((power_out - power_in), -1.0))
+    mooseWarning(
+        "Energy conservation equation might not be solved correctly, Power added to coolant:  " +
+        std::to_string(power_out - power_in) + " Watt ");
+}
+
+void
 SubChannel1PhaseProblem::syncSolutions(Direction /*direction*/)
 {
 }

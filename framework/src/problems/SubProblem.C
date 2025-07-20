@@ -60,7 +60,6 @@ const std::unordered_set<FEFamily> SubProblem::_default_families_without_p_refin
 SubProblem::SubProblem(const InputParameters & parameters)
   : Problem(parameters),
     _factory(_app.getFactory()),
-    _requires_nonlocal_coupling(false),
     _default_ghosting(getParam<bool>("default_ghosting")),
     _currently_computing_jacobian(false),
     _currently_computing_residual_and_jacobian(false),
@@ -370,8 +369,8 @@ void
 SubProblem::setActiveFEVariableCoupleableVectorTags(std::set<TagID> & vtags, const THREAD_ID tid)
 {
   _active_fe_var_coupleable_vector_tags[tid] = vtags;
-  for (const auto nl_sys_num : make_range(numNonlinearSystems()))
-    systemBaseNonlinear(nl_sys_num).setActiveVariableCoupleableVectorTags(vtags, tid);
+  for (const auto sys_num : make_range(numSolverSystems()))
+    systemBaseSolver(sys_num).setActiveVariableCoupleableVectorTags(vtags, tid);
   systemBaseAuxiliary().setActiveVariableCoupleableVectorTags(vtags, tid);
 }
 
@@ -767,12 +766,6 @@ unsigned int
 SubProblem::nLinearIterations(unsigned int) const
 {
   return 0;
-}
-
-void
-SubProblem::meshChanged()
-{
-  mooseError("This system does not support changing the mesh");
 }
 
 std::string

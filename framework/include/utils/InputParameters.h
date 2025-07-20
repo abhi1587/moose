@@ -967,10 +967,17 @@ public:
   bool paramSetByUser(const std::string & name) const;
 
   /**
-   * Method returns true if the parameter was by the user
+   * Method returns true if the parameter was set by the user
    * @param name The parameter name
    */
   bool isParamSetByUser(const std::string & name) const;
+
+  /**
+   * Method returns true if the parameter is defined for any type. If the
+   * type is known, use have_parameter<T>() instead.
+   * @param name The parameter name
+   */
+  bool isParamDefined(const std::string & name) const;
 
   ///@{
   /*
@@ -1145,7 +1152,8 @@ public:
 
   /**
    * A wrapper around the \p Parameters base class method. Checks for parameter rename before
-   * calling the base class method
+   * calling the base class method. This method tells whether a parameter with a known type is
+   * defined. If the type is unknown, use isParamDefined().
    * @param name The name to query the parameter values map with
    * @return Whether there is a key in the parameter values map corresponding to the (possibly
    * renamed) name
@@ -1213,9 +1221,13 @@ private:
    */
   void setParameters() {}
 
+  template <typename T>
+  static constexpr bool isFunctorNameType();
+
   /**
    * Appends description of what a functor is to a doc string.
    */
+  template <typename T>
   std::string appendFunctorDescription(const std::string & doc_string) const;
 
   /**
@@ -1621,8 +1633,8 @@ InputParameters::addRequiredParam(const std::string & name, const std::string & 
   InputParameters::insert<T>(name);
   auto & metadata = _params[name];
   metadata._required = true;
-  if (std::is_same_v<T, MooseFunctorName>)
-    metadata._doc_string = appendFunctorDescription(doc_string);
+  if constexpr (isFunctorNameType<T>())
+    metadata._doc_string = appendFunctorDescription<T>(doc_string);
   else
     metadata._doc_string = doc_string;
 }
@@ -1646,8 +1658,8 @@ InputParameters::addParam(const std::string & name, const S & value, const std::
 
   T & l_value = InputParameters::set<T>(name);
   auto & metadata = _params[name];
-  if (std::is_same_v<T, MooseFunctorName>)
-    metadata._doc_string = appendFunctorDescription(doc_string);
+  if constexpr (isFunctorNameType<T>())
+    metadata._doc_string = appendFunctorDescription<T>(doc_string);
   else
     metadata._doc_string = doc_string;
 
@@ -1668,8 +1680,8 @@ InputParameters::addParam(const std::string & name, const std::string & doc_stri
   checkConsistentType<T>(name);
 
   InputParameters::insert<T>(name);
-  if (std::is_same_v<T, MooseFunctorName>)
-    _params[name]._doc_string = appendFunctorDescription(doc_string);
+  if constexpr (isFunctorNameType<T>())
+    _params[name]._doc_string = appendFunctorDescription<T>(doc_string);
   else
     _params[name]._doc_string = doc_string;
 }
@@ -1868,13 +1880,9 @@ InputParameters::addCommandLineParam(const std::string & name,
 
   auto constexpr is_bool = std::is_same_v<T, bool>;
   if constexpr (is_bool)
-  {
     addParam<T>(name, false, doc_string);
-  }
   else
-  {
     addParam<T>(name, doc_string);
-  }
 
   addCommandLineParamHelper<T>(
       name, syntax, /* required = */ false, /* value_required = */ !is_bool);
@@ -2305,4 +2313,116 @@ InputParameters::transferParam(const InputParameters & source_params,
     _params[p_name]._is_private = true;
   if (source_params.isControllable(name))
     _params[p_name]._controllable = true;
+}
+
+namespace Moose
+{
+namespace internal
+{
+template <typename T>
+constexpr T *
+getNullptrExample()
+{
+  return nullptr;
+}
+
+#ifdef MFEM_ENABLED
+
+template <typename T>
+constexpr bool
+isMFEMFunctorNameTypeHelper(T *)
+{
+  return std::is_same_v<T, MFEMScalarCoefficientName> ||
+         std::is_same_v<T, MFEMVectorCoefficientName>;
+}
+
+template <typename T, typename A>
+constexpr bool
+isMFEMFunctorNameTypeHelper(std::vector<T, A> *)
+{
+  return isMFEMFunctorNameTypeHelper(getNullptrExample<T>());
+}
+
+#endif
+
+template <typename T>
+constexpr bool
+isScalarFunctorNameTypeHelper(T *)
+{
+  return std::is_same_v<T, MooseFunctorName>
+#ifdef MFEM_ENABLED
+         || std::is_same_v<T, MFEMScalarCoefficientName>
+#endif
+      ;
+}
+
+template <typename T, typename A>
+constexpr bool
+isScalarFunctorNameTypeHelper(std::vector<T, A> *)
+{
+  return isScalarFunctorNameTypeHelper(getNullptrExample<T>());
+}
+
+template <typename T>
+constexpr bool
+isVectorFunctorNameTypeHelper(T *)
+{
+#ifdef MFEM_ENABLED
+  return std::is_same_v<T, MFEMVectorCoefficientName>;
+#else
+  return false;
+#endif
+}
+
+template <typename T, typename A>
+constexpr bool
+isVectorFunctorNameTypeHelper(std::vector<T, A> *)
+{
+  return isVectorFunctorNameTypeHelper(getNullptrExample<T>());
+}
+
+template <typename T>
+constexpr bool
+isFunctorNameTypeHelper(T * ex)
+{
+  return isScalarFunctorNameTypeHelper(ex) || isVectorFunctorNameTypeHelper(ex);
+}
+}
+}
+
+template <typename T>
+constexpr bool
+InputParameters::isFunctorNameType()
+{
+  return Moose::internal::isFunctorNameTypeHelper(Moose::internal::getNullptrExample<T>());
+}
+
+template <typename T>
+std::string
+InputParameters::appendFunctorDescription(const std::string & doc_string) const
+{
+  auto numeric_value_type = []()
+  {
+    if constexpr (Moose::internal::isScalarFunctorNameTypeHelper(
+                      Moose::internal::getNullptrExample<T>()))
+      return "number";
+    else if constexpr (Moose::internal::isVectorFunctorNameTypeHelper(
+                           Moose::internal::getNullptrExample<T>()))
+      return "numeric vector value (enclosed in curly braces)";
+    else
+    {
+      mooseAssert(false, "We control instantiations of this method");
+      return "";
+    }
+  };
+
+  return MooseUtils::trim(doc_string, ". ") + ". A functor is any of the following: a variable, " +
+         (
+#ifdef MFEM_ENABLED
+             Moose::internal::isMFEMFunctorNameTypeHelper(Moose::internal::getNullptrExample<T>())
+                 ? "an MFEM"
+                 :
+#endif
+                 "a functor") +
+         " material property, a function, a postprocessor or a " + numeric_value_type() + ".";
 }

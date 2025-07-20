@@ -1,11 +1,15 @@
+# Include variables defined by MOOSE configure if it's been run
+-include $(MOOSE_DIR)/conf_vars.mk
+
 # Whether or not to do a Unity build
 MOOSE_UNITY ?= true
 MOOSE_HEADER_SYMLINKS ?= true
 
 # We ignore this in the contrib folder because we will set up the include
 # directories manually later
-IGNORE_CONTRIB_INC ?= libtorch
+IGNORE_CONTRIB_INC ?= libtorch mfem neml2
 ENABLE_LIBTORCH ?= false
+ENABLE_MFEM ?= false
 
 # this allows us to modify the linked names/rpaths safely later for install targets
 ifneq (,$(findstring darwin,$(libmesh_HOST)))
@@ -71,7 +75,7 @@ pyhit_srcfiles  := $(hit_srcdir)/hit.cpp $(hit_srcdir)/lex.cc $(hit_srcdir)/pars
 # capabilities python bindings
 #
 CAPABILITIES_DIR ?= $(MOOSE_DIR)/framework/contrib/capabilities
-capabilities_srcfiles := $(CAPABILITIES_DIR)/capabilities.C
+capabilities_srcfiles := $(CAPABILITIES_DIR)/capabilities.C $(FRAMEWORK_DIR)/src/utils/CapabilityUtils.C
 
 # Making a .la object instead.  This is what you make out of .lo objects...
 moose_LIB := $(FRAMEWORK_DIR)/libmoose-$(METHOD).la
@@ -92,6 +96,25 @@ wasp_CXXFLAGS     := -DWASP_ENABLED -I$(WASP_DIR)/include
 wasp_LDFLAGS      := -Wl,-rpath,$(WASP_DIR)/lib -L$(WASP_DIR)/lib $(wasp_LIBS)
 libmesh_CXXFLAGS  += $(wasp_CXXFLAGS)
 libmesh_LDFLAGS   += $(wasp_LDFLAGS)
+
+#
+# neml2
+#
+include $(FRAMEWORK_DIR)/contrib/neml2.mk
+
+SKIP_EXTERNAL_LIBRARY_CHECK_TARGETS := clean clobber cleanall clobberall echo_include echo_library install_make_dir libmesh_submodule_status
+
+# $(call check_library_should_error,<libname>)
+define check_library_should_error
+ifeq ($(strip $$(MAKECMDGOALS)),)
+  $$(eval $1_should_error := true)
+else
+  $$(eval $1_filtered_goals := $$(filter $$(SKIP_EXTERNAL_LIBRARY_CHECK_TARGETS),$$(MAKECMDGOALS)))
+  ifneq ($$(words $$($1_filtered_goals)),$$(words $$(MAKECMDGOALS)))
+    $$(eval $1_should_error := true)
+  endif
+endif
+endef
 
 #
 # Conditional parts if the user wants to compile MOOSE with torchlib
@@ -119,8 +142,52 @@ ifeq ($(ENABLE_LIBTORCH),true)
     libmesh_LDFLAGS += -L$(LIBTORCH_DIR)/lib -ltorch
 
   else
-    $(error ERROR! Cannot locate any dynamic libraries of libtorch. Make sure to install libtorch (manually or using scripts/setup_libtorch.sh) and to run the configure --with-libtorch before compiling moose!)
+		# No libtorch library found
+    $(eval $(call check_library_should_error,libtorch))
+
+    ifeq ($(libtorch_should_error),true)
+      $(error ERROR! MOOSE was configured with libtorch but we cannot locate any dynamic libraries of libtorch. Make sure to install libtorch using the instructions provided here: https://mooseframework.inl.gov/getting_started/installation/install_libtorch.html !)
+    else
+      $(info Skipping libtorch error check for targets that don't involve compilation!)
+    endif
+
   endif
+endif
+
+#
+# Conditional parts if the user wants to compile MOOSE with mfem
+#
+ifeq ($(ENABLE_MFEM),true)
+	MFEM_LIB := libmfem.$(lib_suffix)
+	MFEM_COMMON_LIB := libmfem-common.$(lib_suffix)
+
+  ifneq ($(and $(wildcard $(MFEM_DIR)/lib/$(MFEM_LIB)), $(wildcard $(MFEM_DIR)/lib/$(MFEM_COMMON_LIB))),)
+    # Enabling parts that have MFEM dependencies
+    libmesh_CXXFLAGS += -DMFEM_ENABLED
+
+    # Adding the include directories
+	  include $(MFEM_DIR)/share/mfem/config.mk
+	  libmesh_CXXFLAGS += $(MFEM_INCFLAGS)
+
+    # Dynamically linking with the available MFEM library
+	  ifeq ($(shell uname -s),Darwin)
+	  	libmesh_LDFLAGS += -Wl,-rpath,$(MFEM_DIR)/lib
+	  else
+	    libmesh_LDFLAGS += -Wl,--copy-dt-needed-entries,-rpath,$(MFEM_DIR)/lib
+	  endif
+
+    libmesh_LDFLAGS += -L$(MFEM_DIR)/lib -lmfem -lmfem-common
+
+  else
+    # No mfem library found
+    $(eval $(call check_library_should_error,mfem))
+
+    ifeq ($(mfem_should_error),true)
+      $(error ERROR! Cannot locate libmfem and libmfem-common. Make sure to install mfem before compiling MOOSE!)
+    else
+      $(info Skipping libmfem error check for targets that don't involve compilation!)
+    endif
+	endif
 endif
 
 #
@@ -158,20 +225,18 @@ pyhit_LIB          := $(HIT_DIR)/hit.$(PYMOD_EXTENSION)
 pyhit_COMPILEFLAGS += $(PYMOD_COMPILEFLAGS) $(wasp_CXXFLAGS) $(wasp_LDFLAGS)
 
 hit $(pyhit_LIB) $(hit_CLI): $(pyhit_srcfiles) $(hit_CLI_srcfiles)
-	@echo "Building and linking "$@"..."
+	@echo "Building and linking $(pyhit_LIB)..."
 	@bash -c '(cd "$(HIT_DIR)" && $(libmesh_CXX) -I$(HIT_DIR)/include -std=c++17 -w -fPIC -lstdc++ -shared $^ $(pyhit_COMPILEFLAGS) $(DYNAMIC_LOOKUP) -o $(pyhit_LIB))'
 	@bash -c '(cd "$(HIT_DIR)" && $(MAKE))'
 
 capabilities_LIBNAME      := capabilities.$(PYMOD_EXTENSION)
 capabilities_LIB          := $(CAPABILITIES_DIR)/$(capabilities_LIBNAME)
-capabilities_COMPILEFLAGS += $(PYMOD_COMPILEFLAGS)
-capabilities_LDFLAGS      := -Wl,-rpath,$(HIT_DIR) -L$(HIT_DIR) -lhit-$(METHOD) -Wl,-rpath,$(FRAMEWORK_DIR) -L$(FRAMEWORK_DIR) -lmoose-$(METHOD) $(DYNAMIC_LOOKUP)
+capabilities_COMPILEFLAGS += $(PYMOD_COMPILEFLAGS) -I$(FRAMEWORK_DIR)/contrib/cpp-peglib/include -I$(FRAMEWORK_DIR)/include/utils
+capabilities_LDFLAGS      := $(DYNAMIC_LOOKUP)
 
-capabilities $(capabilities_LIB) : $(capabilities_srcfiles) $(moose_LIB) $(app_HEADER) | prebuild
-	@echo "Building and linking "$@"..."
-# @$(libmesh_LIBTOOL) --tag=CXX $(LIBTOOLFLAGS) --mode=link \
-# $(libmesh_CXX) -std=c++17 -w -fPIC -lstdc++ -shared $(capabilities_srcfiles) $(app_INCLUDES) $(libmesh_INCLUDE) $(moose_INCLUDE) -I $(MOOSE_DIR)/framework/contrib/boost/include $(capabilities_COMPILEFLAGS) $(capabilities_LDFLAGS) -o $(capabilities_LIB)
-	@bash -c '(cd "$(CAPABILITIES_DIR)" && $(libmesh_CXX) -std=c++17 -w -fPIC -lstdc++ -shared $(capabilities_srcfiles) $(app_INCLUDES) $(libmesh_INCLUDE) $(moose_INCLUDE) -I $(MOOSE_DIR)/framework/contrib/boost/include $(capabilities_COMPILEFLAGS) $(capabilities_LDFLAGS) -o $(capabilities_LIB))'
+capabilities $(capabilities_LIB) : $(capabilities_srcfiles)
+	@echo "Building and linking $(capabilities_LIB)..."
+	@bash -c '(cd "$(CAPABILITIES_DIR)" && $(libmesh_CXX) -std=c++17 -w -fPIC -lstdc++ -shared $(capabilities_srcfiles) $(capabilities_COMPILEFLAGS) $(capabilities_LDFLAGS) -o $(capabilities_LIB))'
 
 #
 # gtest
@@ -182,6 +247,8 @@ gtest_objects   := $(patsubst %.cc, %.$(no-method-obj-suffix), $(gtest_srcfiles)
 gtest_LIB       := $(gtest_DIR)/libgtest.la
 # dependency files
 gtest_deps      := $(patsubst %.cc, %.$(no-method-obj-suffix).d, $(gtest_srcfiles))
+gtest_INCLUDE := -I$(gtest_DIR)
+
 
 #
 # MooseConfigure
@@ -249,7 +316,9 @@ endif
 moose_INC_DIRS += $(shell find $(FRAMEWORK_DIR)/contrib/*/include -type d)
 
 # We filter out the unnecessary include dirs from the contribs
-ignore_contrib_include := $(foreach ex_dir, $(IGNORE_CONTRIB_INC), $(if $(dir $(wildcard $(FRAMEWORK_DIR)/contrib/$(ex_dir)/.)),$(shell find $(FRAMEWORK_DIR)/contrib/$(ex_dir)/include -type d),))
+ignore_contrib_include := $(foreach ex_dir, $(IGNORE_CONTRIB_INC), \
+    $(if $(wildcard $(FRAMEWORK_DIR)/contrib/$(ex_dir)/include), \
+        $(shell find $(FRAMEWORK_DIR)/contrib/$(ex_dir)/include -type d),))
 moose_INC_DIRS := $(filter-out $(ignore_contrib_include), $(moose_INC_DIRS))
 
 moose_INC_DIRS += $(gtest_DIR)
@@ -452,7 +521,6 @@ ifeq ($(MOOSE_HEADER_SYMLINKS),true)
 
 
 $(moose_objects): $(moose_config_symlink) | moose_header_symlinks
-$(capabilities_LIB) : | moose_header_symlinks
 
 else
 
@@ -539,15 +607,10 @@ install_python: $(pyhit_LIB) $(capabilities_LIB)
 	@rm -rf $(python_install_dir)
 	@mkdir -p $(python_install_dir)
 	@cp -R $(MOOSE_DIR)/python/* $(python_install_dir)/
-	@cp -f $(pyhit_LIB) $(python_install_dir)/
 	@echo "Installing python library $(pyhit_LIB)"
-	@cp -f $(capabilities_LIB) $(python_install_dir)/
+	@cp -f $(pyhit_LIB) $(python_install_dir)/
 	@echo "Installing python library $(capabilities_LIB)"
-	@$(call remove_rpath,$(python_install_dir)/$(capabilities_LIBNAME),$(FRAMEWORK_DIR))
-	@$(call remove_rpath,$(python_install_dir)/$(capabilities_LIBNAME),$(HIT_DIR))
-	@$(call patch_rpath,$(python_install_dir)/$(capabilities_LIBNAME),$(lib_install_dir))
-	@$(call patch_relink,$(python_install_dir)/$(capabilities_LIBNAME),$(shell realpath $(moose_DYLIB)),$(shell readlink $(moose_DYLIB)))
-	@$(call patch_relink,$(python_install_dir)/$(capabilities_LIBNAME),$(shell realpath $(hit_DYLIB)),$(shell readlink $(hit_DYLIB)))
+	@cp -f $(capabilities_LIB) $(python_install_dir)/
 
 install_harness: install_python
 	@echo "Installing TestHarness"

@@ -30,6 +30,21 @@ class Assembly;
 template <typename T>
 InputParameters validParams();
 
+/**
+ * Utility structure for packaging up all of the residual object's information needed to add into
+ * the system residual and Jacobian in the context of automatic differentiation. The necessary
+ * information includes the vector of residuals and Jacobians represented by dual numbers, the
+ * vector of degrees of freedom (this should be the same length as the vector of dual numbers), and
+ * a scaling factor that will multiply the dual numbers before their addition into the global
+ * residual and Jacobian
+ */
+struct ADResidualsPacket
+{
+  const DenseVector<ADReal> & residuals;
+  const std::vector<dof_id_type> & dof_indices;
+  const Real scaling_factor;
+};
+
 class TaggingInterface
 {
 public:
@@ -46,6 +61,7 @@ public:
   {
     friend class AttribVectorTags;
     friend class NonlinearEigenSystem;
+    friend class LinearSystemContributionObject;
     template <typename>
     friend class MooseObjectTagWarehouse;
 
@@ -61,6 +77,7 @@ public:
   {
     friend class AttribMatrixTags;
     friend class NonlinearEigenSystem;
+    friend class LinearSystemContributionObject;
     template <typename>
     friend class MooseObjectTagWarehouse;
 
@@ -257,6 +274,22 @@ protected:
                    Real scaling_factor);
 
   /**
+   * Add the provided incoming residuals corresponding to the provided dof indices
+   */
+  void addResiduals(Assembly & assembly, const ADResidualsPacket & packet);
+
+  /**
+   * Add the provided incoming residuals and derivatives for the Jacobian, corresponding to the
+   * provided dof indices
+   */
+  void addResidualsAndJacobian(Assembly & assembly, const ADResidualsPacket & packet);
+
+  /**
+   * Add the provided residual derivatives into the Jacobian for the provided dof indices
+   */
+  void addJacobian(Assembly & assembly, const ADResidualsPacket & packet);
+
+  /**
    * Add the provided incoming residuals corresponding to the provided dof indices. This API should
    * only be used if the caller knows that no libMesh-level constraints (hanging nodes or periodic
    * boundary conditions) apply to the provided dof indices
@@ -348,7 +381,7 @@ private:
                                 const std::set<TagID> & vector_tags,
                                 const std::set<TagID> & absolute_value_vector_tags);
 
-  /// The residual tag ids this Kernel will contribute to
+  /// The vector tag ids this Kernel will contribute to
   std::set<TagID> _vector_tags;
 
   /// The absolute value residual tag ids
@@ -557,4 +590,22 @@ TaggingInterface::setResidual(SystemBase & sys, const SetResidualFunctor set_res
   for (const auto tag_id : _vector_tags)
     if (sys.hasVector(tag_id))
       set_residual_functor(sys.getVector(tag_id));
+}
+
+inline void
+TaggingInterface::addResiduals(Assembly & assembly, const ADResidualsPacket & packet)
+{
+  addResiduals(assembly, packet.residuals, packet.dof_indices, packet.scaling_factor);
+}
+
+inline void
+TaggingInterface::addResidualsAndJacobian(Assembly & assembly, const ADResidualsPacket & packet)
+{
+  addResidualsAndJacobian(assembly, packet.residuals, packet.dof_indices, packet.scaling_factor);
+}
+
+inline void
+TaggingInterface::addJacobian(Assembly & assembly, const ADResidualsPacket & packet)
+{
+  addJacobian(assembly, packet.residuals, packet.dof_indices, packet.scaling_factor);
 }

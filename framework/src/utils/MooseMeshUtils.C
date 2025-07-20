@@ -183,13 +183,22 @@ getBoundaryIDSet(const MeshBase & mesh,
 }
 
 std::vector<subdomain_id_type>
-getSubdomainIDs(const MeshBase & mesh, const std::vector<SubdomainName> & subdomain_name)
+getSubdomainIDs(const MeshBase & mesh, const std::vector<SubdomainName> & subdomain_names)
 {
-  std::vector<SubdomainID> ids(subdomain_name.size());
+  std::vector<SubdomainID> ids(subdomain_names.size());
 
-  for (const auto i : index_range(subdomain_name))
-    ids[i] = MooseMeshUtils::getSubdomainID(subdomain_name[i], mesh);
+  for (const auto i : index_range(subdomain_names))
+    ids[i] = MooseMeshUtils::getSubdomainID(subdomain_names[i], mesh);
 
+  return ids;
+}
+
+std::set<subdomain_id_type>
+getSubdomainIDs(const MeshBase & mesh, const std::set<SubdomainName> & subdomain_names)
+{
+  std::set<SubdomainID> ids;
+  for (const auto & name : subdomain_names)
+    ids.insert(MooseMeshUtils::getSubdomainID(name, mesh));
   return ids;
 }
 
@@ -535,8 +544,8 @@ void
 swapNodesInElem(Elem & elem, const unsigned int nd1, const unsigned int nd2)
 {
   Node * n_temp = elem.node_ptr(nd1);
-  elem.set_node(nd1) = elem.node_ptr(nd2);
-  elem.set_node(nd2) = n_temp;
+  elem.set_node(nd1, elem.node_ptr(nd2));
+  elem.set_node(nd2, n_temp);
 }
 
 void
@@ -594,11 +603,11 @@ buildBoundaryMesh(const ReplicatedMesh & input_mesh, const boundary_id_type boun
       auto & n = side_elem->node_ref(i);
 
       if (old_new_node_map.count(n.id()))
-        copy->set_node(i) = poly_mesh->node_ptr(old_new_node_map[n.id()]);
+        copy->set_node(i, poly_mesh->node_ptr(old_new_node_map[n.id()]));
       else
       {
         Node * node = poly_mesh->add_point(side_elem->point(i));
-        copy->set_node(i) = node;
+        copy->set_node(i, node);
         old_new_node_map[n.id()] = node->id();
       }
     }

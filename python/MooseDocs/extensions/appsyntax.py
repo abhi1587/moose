@@ -234,7 +234,7 @@ class AppSyntaxExtension(command.CommandExtension):
                                                show_error=False)
         return exe
 
-    def find(self, name, page, node_type=None):
+    def find(self, name, page=None, node_type=None, throw_on_missing=True):
 
         if name.endswith('<RESIDUAL>'):
             msg = "The use of <RESIDUAL> is no longer needed in the syntax name '%s', it " \
@@ -251,9 +251,9 @@ class AppSyntaxExtension(command.CommandExtension):
             node = self._cache.get(name, None)
 
         if node is None:
-            if page.external:
+            if getattr(page, 'external', False):
                 self._external_missing_syntax.add(page.uid)
-            else:
+            elif throw_on_missing:
                 msg = "'{}' syntax was not recognized."
                 raise exceptions.MooseDocsException(msg, name)
 
@@ -555,8 +555,10 @@ class SyntaxListCommand(SyntaxCommandHeadingBase):
     def _addItems(self, parent, info, page, group, objects, base=None):
 
         count = 0
+        obj_name_set = set()
         for obj in objects:
-            if (group in obj.groups()) and not (obj.removed or obj.test):
+            if (group in obj.groups()) and not (obj.removed or obj.test) and not (obj.name, obj.markdown) in obj_name_set:
+                obj_name_set.add((obj.name, obj.markdown))
                 count += 1
                 item = SyntaxListItem(parent, group=group, syntax=obj.name)
                 if base:

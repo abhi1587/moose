@@ -89,7 +89,7 @@ protected:
   selectPressureGradient(const bool updated_pressure);
 
   /// Compute the cell volumes on the mesh
-  void setupCellVolumes();
+  void setupMeshInformation();
 
   /// Populate the face values of the H/A and 1/A fields
   void
@@ -101,6 +101,8 @@ protected:
    */
   template <typename VarType>
   void checkBlocks(const VarType & var) const;
+
+  virtual bool supportMeshVelocity() const override { return false; }
 
   /// The \p MooseMesh that this user object operates on
   const MooseMesh & _moose_mesh;
@@ -185,6 +187,11 @@ protected:
 
   /// Enumerator for the method used for pressure projection
   const MooseEnum _pressure_projection_method;
+
+private:
+  /// The subset of the FaceInfo objects that actually cover the subdomains which the
+  /// flow field is defined on. Cached for performance optimization.
+  std::vector<const FaceInfo *> _flow_face_info;
 };
 
 template <typename VarType>

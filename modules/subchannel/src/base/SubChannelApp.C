@@ -37,6 +37,9 @@ InputParameters
 SubChannelApp::validParams()
 {
   InputParameters params = MooseApp::validParams();
+  params.set<bool>("use_legacy_initial_residual_evaluation_behavior") = false;
+  params.set<bool>("use_legacy_material_output") = false;
+
   return params;
 }
 
@@ -67,26 +70,6 @@ SubChannelApp::registerApps()
   FluidPropertiesApp::registerApps();
   HeatTransferApp::registerApps();
   ReactorApp::registerApps();
-}
-
-void
-SubChannelApp::registerObjects(Factory & factory)
-{
-  mooseDeprecated("use registerAll instead of registerObjects");
-  Registry::registerObjectsTo(factory, {"SubChannelApp"});
-}
-
-void
-SubChannelApp::associateSyntax(Syntax & /*syntax*/, ActionFactory & action_factory)
-{
-  mooseDeprecated("use registerAll instead of associateSyntax");
-  Registry::registerActionsTo(action_factory, {"SubChannelApp"});
-}
-
-void
-SubChannelApp::registerExecFlags(Factory & /*factory*/)
-{
-  mooseDeprecated("Do not use registerExecFlags, apps no longer require flag registration");
 }
 
 /***************************************************************************************************

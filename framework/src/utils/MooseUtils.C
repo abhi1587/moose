@@ -218,16 +218,6 @@ escape(std::string & str)
 }
 
 std::string
-trim(const std::string & str, const std::string & white_space)
-{
-  const auto begin = str.find_first_not_of(white_space);
-  if (begin == std::string::npos)
-    return ""; // no content
-  const auto end = str.find_last_not_of(white_space);
-  return str.substr(begin, end - begin + 1);
-}
-
-std::string
 removeExtraWhitespace(const std::string & input)
 {
   return std::regex_replace(input, std::regex("^\\s+|\\s+$|\\s+(?=\\s)"), "");
@@ -1057,22 +1047,6 @@ convert<unsigned long long int>(const std::string & str, bool throw_on_failure)
 }
 
 std::string
-toUpper(const std::string & name)
-{
-  std::string upper(name);
-  std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
-  return upper;
-}
-
-std::string
-toLower(const std::string & name)
-{
-  std::string lower(name);
-  std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-  return lower;
-}
-
-std::string
 stringJoin(const std::vector<std::string> & values, const std::string & separator)
 {
   std::string combined;
@@ -1294,6 +1268,28 @@ canonicalPath(const std::string & path)
   return std::filesystem::weakly_canonical(path).c_str();
 }
 
+bool
+startsWith(const std::string & string1, const std::string & string2)
+{
+  if (string2.size() > string1.size())
+    return false;
+  return string1.compare(0, string2.size(), string2) == 0;
+}
+
+void
+replaceStart(std::string & string1, const std::string & string2, const std::string & string3)
+{
+  mooseAssert(startsWith(string1, string2),
+              "Cannot replace the start because it doesn't match the start string");
+  string1.replace(0, string2.size(), string3);
+}
+
+bool
+isAllLowercase(const std::string & str)
+{
+  return std::all_of(
+      str.begin(), str.end(), [](unsigned char c) { return !std::isalpha(c) || std::islower(c); });
+}
 } // MooseUtils namespace
 
 void
